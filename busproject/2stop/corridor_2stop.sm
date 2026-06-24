@@ -1,0 +1,65 @@
+// =====================================================================
+//  corridor_2stop.sm  --  2-stop corridor CTMC with a shared bus
+// =====================================================================
+//  Stage 2: extends the single stop to a corridor of two stops served by
+//  the SAME bus, which travels stop1 -> stop2.
+//
+//  COUPLING (the point of this model):
+//    The bus boards up to Cap passengers at stop1, then travels to stop2
+//    carrying that load, so it reaches stop2 with only the LEFTOVER seats
+//    (seats = Cap - boarded at stop1). Heavy demand upstream therefore
+//    leaves few seats for the downstream stop -- "upstream starves
+//    downstream". This station interaction cannot appear in a single-stop
+//    model.
+//
+//  Simplification: one bus traverses the corridor at a time (a new bus
+//  enters stop1 only after the previous has left stop2).
+//
+//  Extending to 3 stops: add n3 and a second travel phase
+//    board1 -> travel -> board2 -> travel -> board3.
+//  State space grows multiplicatively (see the scalability note / Stage 3).
+// =====================================================================
+
+ctmc
+
+const double lambda1  = 1.6;   // arrival rate at stop 1 (per min)
+const double lambda2  = 1.6;   // arrival rate at stop 2 (per min) -- same demand
+const double mu_bus   = 0.5;   // rate a new bus enters stop 1
+const double mu_travel= 0.6;   // rate the bus completes stop1 -> stop2 travel
+const double theta    = 0.03;  // per-passenger reneging rate
+const int    K        = 20;    // station capacity (each stop)
+const int    Cap      = 10;    // bus capacity
+
+module corridor
+
+    n1    : [0..K]   init 0;   // passengers waiting at stop 1
+    n2    : [0..K]   init 0;   // passengers waiting at stop 2
+    bpos  : [0..1]   init 0;   // 0 = no bus in corridor, 1 = bus travelling 1->2
+    seats : [0..Cap] init 0;   // free seats on the travelling bus
+
+    // --- passenger arrivals ---
+    [arr1] n1<K -> lambda1 : (n1'=n1+1);
+    [arr2] n2<K -> lambda2 : (n2'=n2+1);
+
+    // --- reneging ---
+    [ren1] n1>0 -> n1*theta : (n1'=n1-1);
+    [ren2] n2>0 -> n2*theta : (n2'=n2-1);
+
+    // --- bus enters stop1, boards up to Cap, departs with leftover seats ---
+    [board1] bpos=0 -> mu_bus :
+        (n1'=max(n1-Cap,0)) & (seats'=max(Cap-n1,0)) & (bpos'=1);
+
+    // --- bus reaches stop2, boards up to remaining seats, leaves corridor ---
+    [board2] bpos=1 -> mu_travel :
+        (n2'=max(n2-seats,0)) & (seats'=0) & (bpos'=0);
+
+endmodule
+
+label "full1" = n1=K;
+label "full2" = n2=K;
+
+rewards "queue1"      true : n1; endrewards
+rewards "queue2"      true : n2; endrewards
+rewards "queue_total" true : n1+n2; endrewards
+rewards "boarded1" [board1] true : min(n1,Cap);   endrewards
+rewards "boarded2" [board2] true : min(n2,seats); endrewards

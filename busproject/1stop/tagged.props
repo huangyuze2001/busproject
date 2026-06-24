@@ -1,0 +1,39 @@
+// =====================================================================
+//  tagged.props   --   CSL properties for bus_stop_tagged.sm
+// =====================================================================
+//  Run e.g.:
+//    prism bus_stop_tagged.sm tagged.props
+//    prism bus_stop_tagged.sm tagged.props -const A0=0:2:20        (experiment)
+//    prism bus_stop_tagged.sm tagged.props -const mu_bus=0.1:0.05:0.6
+// =====================================================================
+
+// (1) Probability the tagged passenger is served within 15 minutes.
+//     This is your headline reliability property.
+P=? [ F<=15 "served" ]
+
+// (2) Probability the tagged passenger is EVER served
+//     (< 1, because they may renege first).
+P=? [ F "served" ]
+
+// (3) Probability the tagged passenger times out / leaves without boarding.
+P=? [ F "timeout" ]
+
+// (4) Expected time until the passenger's fate is resolved (served OR reneged).
+//     We target "done" (reached with probability 1) so the value is finite.
+//     WARNING: R=? [ F "served" ] alone returns +infinity, because the
+//     renege paths never reach "served". This is the classic reward trap.
+R{"wait"}=? [ F "done" ]
+
+// (5) Expected waiting time accumulated within the first 30 minutes
+//     (time-bounded cumulative reward -- always finite, no trap). Useful as
+//     a bounded-horizon companion to (4).
+R{"wait"}=? [ C<=30 ]
+
+// (6) SLA / guarantee check: is within-20-minute service probability >= 0.95?
+P>=0.95 [ F<=20 "served" ]
+
+// NOTE on  E[wait | served]  (expected wait CONDITIONED on being served):
+//   this conditional expectation is awkward to express robustly in plain
+//   CSL. Compute it numerically (dt_loop.py returns the components), or use
+//   PRISM's conditional-property support if your PRISM version provides it.
+//   For most reliability conclusions, properties (1),(3),(4) are sufficient.

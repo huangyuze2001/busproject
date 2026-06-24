@@ -1,0 +1,75 @@
+// =====================================================================
+//  bus_stop_aggregate.sm   --   aggregate CTMC of one stop (MODULAR)
+// =====================================================================
+//  Tracks the WHOLE station (number waiting) for system-level steady-state
+//  metrics: mean queue length, throughput, P(full), Little's-law check.
+//
+//  *** BULK-SERVICE ABSTRACTION (consistent with bus_stop_tagged.sm) ***
+//  A bus is modelled as an INSTANTANEOUS bulk-service event: it arrives at
+//  rate mu_bus and immediately boards up to Cap waiting passengers, then
+//  leaves. We do NOT model the bus dwelling and boarding one-by-one. This
+//  (a) matches the tagged model's assumption, and (b) avoids a STIFF CTMC
+//  -- the old one-at-a-time boarding (rates ~30-60) versus slow arrivals
+//  (~2) made iterative steady-state solvers fail to converge.
+//
+//  *** WRITTEN FOR COMPOSITION ***
+//  A stop is the module `stop1` with indexed variable/actions (n1,
+//  [arrive1]...). Adding stops in Stage 2 is a one-line module renaming
+//  (see stub at the bottom).
+//
+//  Dynamics (continuous time, exponential rates):
+//    arrival : Poisson, rate lambda, capped at K
+//    reneging: each waiting passenger leaves at rate theta (total n1*theta)
+//    bus     : rate mu_bus; instantly boards up to Cap from the front
+// =====================================================================
+
+ctmc
+
+// ---- canonical parameters (SAME as the tagged CTMC and the MDP) ----
+const double lambda = 2.0;    // passenger arrival rate (per minute)
+const double mu_bus = 0.22;   // bus arrival rate (per minute)
+const double theta  = 0.03;   // per-passenger reneging rate (per minute)
+const int    K      = 30;     // station capacity (max waiting)
+const int    Cap    = 10;     // bus capacity (passengers boarded per bus)
+
+// ---- one bus stop, as a reusable module ----
+module stop1
+
+    n1 : [0..K] init 0;       // passengers waiting at stop 1
+
+    [arrive1] n1<K -> lambda   : (n1'=n1+1);              // a passenger arrives
+    [renege1] n1>0 -> n1*theta : (n1'=n1-1);              // a waiting passenger reneges
+    [bus1]    true -> mu_bus   : (n1'=max(n1-Cap,0));     // bus boards up to Cap (bulk)
+
+endmodule
+
+label "full" = n1=K;
+
+// mean queue length (steady-state expectation of n1)
+rewards "queue"
+    true : n1;
+endrewards
+
+// throughput: passengers boarded per bus arrival. Steady-state
+// R{"boarded"}=?[S] gives the long-run boarding rate (passengers/min).
+rewards "boarded"
+    [bus1] true : min(n1,Cap);
+endrewards
+
+// =====================================================================
+//  STAGE-2 STUB (commented out) -- adding a 2nd stop
+// =====================================================================
+//  (a) A SECOND INDEPENDENT STOP is a one-line renaming:
+//
+//      module stop2 = stop1 [ n1=n2, arrive1=arrive2,
+//                             renege1=renege2, bus1=bus2 ] endmodule
+//
+//  (b) TO CONNECT them into a corridor, the single instantaneous bus
+//      event must be replaced by a TRAVELLING bus: a bus boards at stop1,
+//      then after a travel delay boards the LEFTOVER capacity at stop2.
+//      That needs a small bus-position process (a few extra states),
+//      built in a separate file (e.g. corridor_2stop.sm) in Stage 2.
+//
+//  (c) Multi-stop rewards just sum the per-stop variables, e.g.
+//      rewards "queue_total" true : n1 + n2; endrewards
+// =====================================================================

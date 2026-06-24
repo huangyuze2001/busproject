@@ -1,0 +1,15 @@
+// =====================================================================
+//  corridor_3stop.props  --  properties for corridor_3stop.sm
+// =====================================================================
+//  Headline: with identical demand at all three stops, queues and
+//  saturation GROW downstream (L1 < L2 < L3) -- coupling accumulates.
+// =====================================================================
+
+R{"queue1"}=? [ S ]
+R{"queue2"}=? [ S ]
+R{"queue3"}=? [ S ]
+R{"queue_total"}=? [ S ]
+
+S=? [ "full1" ]
+S=? [ "full2" ]
+S=? [ "full3" ]

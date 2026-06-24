@@ -1,0 +1,22 @@
+// =====================================================================
+//  corridor.props  --  properties for corridor_2stop.sm
+// =====================================================================
+//  Headline coupling result: with identical demand at both stops, the
+//  DOWNSTREAM stop is far worse off (longer queue, lower throughput),
+//  purely because the shared bus arrives there partially full.
+// =====================================================================
+
+// mean queue length at each stop  -- expect L2 >> L1 (coupling)
+R{"queue1"}=? [ S ]
+R{"queue2"}=? [ S ]
+
+// total mean queue across the corridor
+R{"queue_total"}=? [ S ]
+
+// boarding throughput at each stop -- expect stop2 < stop1 (starved)
+R{"boarded1"}=? [ S ]
+R{"boarded2"}=? [ S ]
+
+// saturation at each stop -- expect stop2 fills far more often
+S=? [ "full1" ]
+S=? [ "full2" ]

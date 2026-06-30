@@ -1,23 +1,27 @@
 """
 corridor_simulate.py -- INDEPENDENT discrete-event simulation of the corridor.
 
-Unlike corridor_verify.py (which solves the CTMC's equations, same method as
-PRISM), this script does NOT build any matrix. It samples random events
-(passenger arrivals, reneging, bus arrival/travel) with exponential timing and
-plays the system forward in time, recording the time-average queue lengths.
+This is the corridor cross-validation. It does NOT build any matrix: it samples
+random events (passenger arrivals, reneging, bus arrival/travel) with
+exponential timing and plays the system forward in time, recording the
+time-average queue lengths and the fraction of time each stop is full.
 
-This is a genuinely DIFFERENT paradigm (Monte-Carlo stochastic simulation vs
-exact equation-solving), so agreement with PRISM is a STRONG cross-validation
--- the two are very unlikely to make the same error. Same approach used for
+Because this is a genuinely DIFFERENT paradigm from PRISM (Monte-Carlo
+stochastic simulation vs exact equation-solving), agreement with the
+PRISM-verified results is a STRONG cross-validation -- the two methods are very
+unlikely to make the same error. The same simulation-vs-exact idea is used for
 the single stop in dt_loop.py.
 
-Parameters match the .sm files exactly.
+Parameters and the PRISM reference values are imported from corridor_params.py
+(single source of truth); the parameters there must match the .sm files.
 """
 import numpy as np
+from corridor_params import (LAM, MU_BUS, MU_TRAV, THETA, CAP, K, PRISM_REF)
 
-LAM, MU_BUS, MU_TRAV, THETA, CAP, K = 1.6, 0.5, 0.6, 0.03, 10, 20
+SIM_T = 2_000_000.0     # simulated time horizon (longer -> less Monte-Carlo noise)
 
-def simulate(n_stops, T=2_000_000.0, seed=0):
+
+def simulate(n_stops, T=SIM_T, seed=0):
     """Gillespie-style DES. Returns time-average queue length per stop and
     the fraction of time each stop is full."""
     rng = np.random.default_rng(seed)
@@ -64,25 +68,43 @@ def simulate(n_stops, T=2_000_000.0, seed=0):
                 bpos = bpos + 1 if bpos < n_stops-1 else 0
     return area/t, full_time/t
 
+
+def sim_value(name, L, F):
+    """Map a PRISM property name onto the corresponding simulated quantity."""
+    if name.startswith("queue"):
+        return L[int(name[5:]) - 1]            # queue3 -> L[2]
+    if name.startswith("P(full"):
+        stop = int("".join(ch for ch in name if ch.isdigit()))
+        return F[stop - 1]                     # P(full3) -> F[2]
+    raise KeyError(name)
+
+
+def passed(sim, ref):
+    """Agreement test tolerant of Monte-Carlo noise: <5% relative, or <0.02 abs."""
+    return abs(sim - ref) / max(abs(ref), 1e-9) < 0.05 or abs(sim - ref) < 0.02
+
+
+def report(n_stops, T=SIM_T, seed=1):
+    print(f"\n{n_stops}-STOP  (simulating...)")
+    L, F = simulate(n_stops, T=T, seed=seed)
+    print(f"  {'property':<12}{'Simulation':>12}{'PRISM':>10}{'gap':>9}{'   result'}")
+    print(f"  {'-'*46}")
+    all_ok = True
+    for name, ref in PRISM_REF[n_stops].items():
+        sim = sim_value(name, L, F)
+        gap = abs(sim - ref)
+        ok = passed(sim, ref); all_ok &= ok
+        fmt = ">12.3f" if name.startswith("P(") else ">12.2f"
+        print(f"  {name:<12}{sim:{fmt}}{ref:>10.3f}{gap:>9.3f}   {'PASS' if ok else 'CHECK'}")
+    return all_ok
+
+
 if __name__ == "__main__":
     print("="*60)
     print("Corridor DES (Monte-Carlo simulation) vs PRISM  -- strong check")
     print("="*60)
-
-    print("\n2-STOP  (simulating...)")
-    L, F = simulate(2, T=2_000_000.0, seed=1)
-    print(f"  {'property':<16}{'Simulation':>12}{'PRISM':>10}")
-    print(f"  {'-'*38}")
-    print(f"  {'queue1':<16}{L[0]:>12.2f}{4.637:>10.2f}")
-    print(f"  {'queue2':<16}{L[1]:>12.2f}{11.228:>10.2f}")
-    print(f"  {'P(full2)':<16}{F[1]:>12.3f}{0.128:>10.3f}")
-
-    print("\n3-STOP  (simulating...)")
-    L, F = simulate(3, T=2_000_000.0, seed=1)
-    print(f"  {'property':<16}{'Simulation':>12}{'PRISM':>10}")
-    print(f"  {'-'*38}")
-    print(f"  {'queue1':<16}{L[0]:>12.2f}{6.643:>10.2f}")
-    print(f"  {'queue2':<16}{L[1]:>12.2f}{16.983:>10.2f}")
-    print(f"  {'queue3':<16}{L[2]:>12.2f}{19.424:>10.2f}")
-    print(f"  {'P(full3)':<16}{F[2]:>12.3f}{0.631:>10.3f}")
-
+    ok2 = report(2)
+    ok3 = report(3)
+    print("\n" + "="*60)
+    print(f"Overall: {'ALL PASS' if (ok2 and ok3) else 'SOME CHECKS -- inspect above'}")
+    print("="*60)

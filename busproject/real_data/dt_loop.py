@@ -1,8 +1,40 @@
+"""
+Digital-twin loop for the single-stop bus model.
+
+Runs the closed loop:  data -> parameter estimation -> CTMC verification
+-> SLA decision (control search), in TWO modes:
+
+  * SYNTHETIC mode (unchanged): the physical layer is a discrete-event
+    simulation with KNOWN true parameters. Because the truth is known, this
+    mode doubles as MODEL VALIDATION -- the exact CTMC solve (mirroring PRISM
+    CSL) is cross-checked against the independent simulation (the 0.749 vs
+    0.756 agreement). The twin estimates lambda and theta; the bus rate mu_bus
+    is a control variable the twin sets.
+
+  * REAL mode (new): the physical layer is the REAL route-77 timetable
+    (route77_data.py). Here the NEW estimated parameter is mu_bus, recovered
+    from the real headways; passenger demand (lambda, theta) is assumed, since
+    a timetable gives the bus service rate but not demand. The twin then
+    verifies the SLA at the real operating point and, if violated, searches
+    for the bus frequency that would restore it.
+
+So the difference is symmetric: synthetic mode estimates (lambda, theta) with
+mu_bus told; real mode estimates mu_bus with (lambda, theta) assumed. Both run
+the same verification + decision machinery.
+
+Run:  python dt_loop.py   (needs numpy, scipy, matplotlib, and route77_data.py
+                            in the same folder)
+"""
 import numpy as np
 from scipy.linalg import expm
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+try:
+    from route77_data import dep_minutes
+except ImportError:
+    dep_minutes = None   # real mode will report a clear message if data missing
 
 rng = np.random.default_rng(7)
 
@@ -146,17 +178,33 @@ def estimate_params(done, obs_time):
     return lam_hat, theta_hat, dist
 
 
+def estimate_mu_from_timetable(lo_h, hi_h):
+    """REAL mode estimator: recover mu_bus from the real timetable headways
+    within the clock window [lo_h, hi_h) hours.  Returns (mu_bus_per_min, headway)."""
+    if dep_minutes is None:
+        raise RuntimeError("route77_data.py not found next to dt_loop.py")
+    t = np.array(dep_minutes(), float)
+    gaps = np.diff(t)
+    mids = (t[:-1] + t[1:]) / 2 / 60.0
+    sel = (mids >= lo_h) & (mids < hi_h)
+    headway = gaps[sel].mean()
+    return 1.0 / headway, headway
 
-# 4. RUN: validation + one digital-twin turn with a control search
 
-def main():
+
+# 4a. SYNTHETIC RUN: validation + one digital-twin turn with a control search
+
+def run_synthetic():
     # ---- TRUE physical parameters (unknown to the twin) ----
     TRUE = dict(lam=2.0, mu_bus=0.22, theta=0.03, C=10)   # headway ~ 4.5 min
     T   = 15.0      # service deadline (minutes)
     SLA = 0.95      # target: P(served within T) >= SLA
     M   = 80        # truncation of #ahead in the CTMC
 
-    print("=" * 64)
+    print("#" * 64)
+    print("#  MODE A : SYNTHETIC  (known truth -> doubles as model validation)")
+    print("#" * 64)
+    print("\n" + "=" * 64)
     print("STEP 1 - PHYSICAL LAYER (discrete-event simulation)")
     print("=" * 64)
     done = simulate(**TRUE, horizon=40000.0)
@@ -196,6 +244,68 @@ def main():
     print("\n" + "=" * 64)
     print("STEP 4 - DECISION (search headway to meet the SLA)")
     print("=" * 64)
+    _twin_decision(theta_hat, TRUE["C"], M, T, SLA, ahead_dist, mu_now, p_served_T,
+                   fname="dt_reliability_curve.png",
+                   title="Digital-twin control search: reliability vs bus frequency")
+
+
+# 4b. REAL RUN: ingest the real timetable, estimate mu_bus, verify + decide
+
+def run_real(window=(7, 19)):
+    # demand is ASSUMED (a timetable gives the bus rate, not demand);
+    # values match real_data_case.py (realistic, non-saturated).
+    LAM, THETA, C = 0.40, 0.03, 10
+    T, SLA, M = 15.0, 0.95, 80
+
+    print("\n\n" + "#" * 64)
+    print("#  MODE B : REAL  (ingest real timetable -> estimate mu_bus -> decide)")
+    print("#" * 64)
+
+    if dep_minutes is None:
+        print("\n[skipped] route77_data.py not found next to dt_loop.py.")
+        return
+
+    print("\n" + "=" * 64)
+    print("STEP 1 - PHYSICAL LAYER (real route-77 timetable, Partick)")
+    print("=" * 64)
+    mu_real, headway = estimate_mu_from_timetable(*window)
+    print(f"window                    : {window[0]:02d}:00-{window[1]:02d}:00 (daytime service)")
+    print(f"real mean headway         : {headway:.1f} min")
+    print(f"estimated mu_bus          : {mu_real:.4f} /min  ({60*mu_real:.2f} /hour)")
+    print("(demand lambda, theta ASSUMED -- a timetable gives the bus rate only)")
+
+    print("\n" + "=" * 64)
+    print("STEP 2 - ESTIMATOR + cross-check (assumed demand + real mu_bus)")
+    print("=" * 64)
+    done = simulate(LAM, mu_real, THETA, C, horizon=40000.0)
+    obs_time = max(p.arrival for p in done)
+    emp_p_served_T = np.mean([p.outcome == "served" and p.wait <= T for p in done])
+    lam_hat, theta_hat, ahead_dist = estimate_params(done, obs_time)
+    print(f"#ahead seen at arrival: mean = "
+          f"{sum(a*w for a,w in ahead_dist.items()):.2f}")
+
+    print("\n" + "=" * 64)
+    print("STEP 3 - CTMC VERIFICATION at the real operating point")
+    print("=" * 64)
+    p_served_T, e_wait = reliability_for_arrival(mu_real, theta_hat, C, M, T, ahead_dist)
+    print(f"CTMC P=? [F<={T:g} served] = {p_served_T:.3f}   "
+          f"(sim cross-check {emp_p_served_T:.3f})")
+    print(f"CTMC R(wait)=? [F done]    = {e_wait:.2f} min")
+    print("(note: real mode carries no independent ground truth; the model-validation")
+    print(" weight sits with MODE A. Here the cross-check only confirms consistency.)")
+
+    print("\n" + "=" * 64)
+    print("STEP 4 - DECISION (does the REAL service meet the SLA?)")
+    print("=" * 64)
+    _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_real, p_served_T,
+                   fname="dt_reliability_curve_real.png",
+                   title="Digital-twin on real data: reliability vs bus frequency")
+
+
+# shared STEP-4 logic (SLA check + control search + figure)
+
+def _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_now, p_served_T,
+                   fname, title):
     print(f"SLA: P(served within {T:g} min) >= {SLA}")
     if p_served_T >= SLA:
         print(f"Current operating point already meets SLA "
@@ -203,39 +313,35 @@ def main():
     else:
         print(f"Current point VIOLATES SLA ({p_served_T:.3f} < {SLA}). Searching...")
 
-    # sweep bus frequency (control variable)
     mus = np.linspace(0.10, 1.00, 31)          # headway 10 min .. 1 min
-    curve = []
-    for mu in mus:
-        ps, _ = reliability_for_arrival(mu, theta_hat, TRUE["C"], M, T, ahead_dist)
-        curve.append(ps)
-    curve = np.array(curve)
+    curve = np.array([reliability_for_arrival(mu, theta_hat, C, M, T, ahead_dist)[0]
+                      for mu in mus])
     feasible = mus[curve >= SLA]
     rec_mu = feasible.min() if feasible.size else mus[-1]
+    rec_p = reliability_for_arrival(rec_mu, theta_hat, C, M, T, ahead_dist)[0]
+    note = "" if feasible.size else "  (SLA not reachable within search range)"
     print(f"recommended bus rate mu* = {rec_mu:.3f} /min "
-          f"(headway {1/rec_mu:.2f} min)  -> "
-          f"P(served<= {T:g}) = "
-          f"{reliability_for_arrival(rec_mu, theta_hat, TRUE['C'], M, T, ahead_dist)[0]:.3f}")
+          f"(headway {1/rec_mu:.2f} min)  -> P(served<= {T:g}) = {rec_p:.3f}{note}")
 
-    # ---- figure ----
     fig, ax = plt.subplots(figsize=(7.2, 4.4))
     ax.plot(mus, curve, "-o", ms=4, color="#2b6cb0", label="CTMC: P(served within 15 min)")
     ax.axhline(SLA, ls="--", color="#c0392b", label=f"SLA = {SLA}")
     ax.axvline(mu_now, ls=":", color="#7f8c8d")
     ax.scatter([mu_now], [p_served_T], color="#7f8c8d", zorder=5, label="current op. point")
-    ax.scatter([rec_mu], [reliability_for_arrival(rec_mu, theta_hat, TRUE['C'], M, T, ahead_dist)[0]],
-               color="#27ae60", zorder=5, s=70, marker="*", label="recommended")
+    ax.scatter([rec_mu], [rec_p], color="#27ae60", zorder=5, s=70, marker="*",
+               label="recommended")
     ax.set_xlabel("bus arrival rate  $\\mu_{bus}$  (per minute)")
     ax.set_ylabel("P(served within 15 min)")
-    ax.set_title("Digital-twin control search: service reliability vs bus frequency")
+    ax.set_title(title)
     ax.grid(alpha=0.3); ax.legend(fontsize=8)
     secax = ax.secondary_xaxis("top", functions=(lambda x: 1/np.maximum(x,1e-6),
                                                   lambda x: 1/np.maximum(x,1e-6)))
     secax.set_xlabel("headway (min)")
     fig.tight_layout()
-    fig.savefig("dt_reliability_curve.png", dpi=130)   # saved next to this script
-    print("\nsaved figure -> dt_reliability_curve.png")
+    fig.savefig(fname, dpi=130)
+    print(f"saved figure -> {fname}")
 
 
 if __name__ == "__main__":
-    main()
+    run_synthetic()
+    run_real()

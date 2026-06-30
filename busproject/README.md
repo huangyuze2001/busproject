@@ -1,201 +1,210 @@
 # Probabilistic Model Checking of a Bus-Stop Digital Twin
 
-A formally-analysable model of bus-stop passenger waiting time and service
-reliability, analysed with probabilistic model checking (PRISM) and wrapped in
-a data-driven digital-twin loop. The project runs in three stages plus a
-real-data case study, and every synthetic result is cross-validated by an
-independent method.
+Passenger waiting time and service reliability of an urban bus stop, analysed
+with **probabilistic model checking** in [PRISM](https://www.prismmodelchecker.org/),
+cross-validated with independent Python simulations, and extended to a corridor
+of stops, a real timetable, a runtime-verification monitor, and a digital-twin
+loop.
 
-```
-Stage 1  single stop        -- CTMC reliability/waiting + MDP dispatch control
-Stage 2  corridor           -- shared-bus coupling across 2 and 3 stops
-Stage 3  scalability        -- state-space growth -> statistical model checking
-Real-data case study        -- time-dependent service rate from a real timetable
-```
-
-All parameters in Stages 1-2 are SYNTHETIC by design (chosen to exercise and
-*validate* the models, with known ground truth so cross-validation is possible).
-Real-data calibration is introduced in the case study and is the next stage.
+MSc dissertation project. Models are written for PRISM 4.10.1; all Python
+scripts use only `numpy`, `scipy`, and `matplotlib`.
 
 ---
 
-## Project layout
+## Overview
+
+The bus stop is modelled as a probabilistic system with Poisson passenger
+arrivals, capacity-limited buses, and passengers who abandon (renege) after
+waiting too long. Three complementary models are built and checked:
+
+- a **tagged-passenger CTMC** for per-passenger reliability and waiting time;
+- an **aggregate CTMC** for system-level steady-state metrics;
+- a **Markov decision process (MDP)** for dispatch control.
+
+The single-stop model is then extended along three stages:
+
+1. **Single stop** — reliability, waiting, and dispatch control (Stages 1).
+2. **Corridor** — 2- and 3-stop models served by a shared bus, quantifying
+   inter-stop coupling (Stage 2).
+3. **Scalability** — how the reachable state space grows per added stop, and the
+   point at which exact model checking must give way to statistical methods
+   (Stage 3, discussed).
+
+On top of these, the project adds a **real-timetable case study**, a
+**runtime-verification (RV) monitor**, and a **digital-twin loop** that estimates
+parameters from data, verifies a service-level agreement (SLA), and recommends a
+control action.
+
+Every synthetic result is cross-validated against at least one independent
+method (exact equation-solving vs Monte-Carlo simulation).
+
+---
+
+## Repository structure
 
 ```
 busproject/
-├── 1stop/                     Stage 1 - single-stop models
-│   ├── bus_stop_tagged.sm     CTMC: per-passenger reliability / waiting / timeout
-│   ├── tagged.props           CSL properties for the tagged model
-│   ├── bus_stop_aggregate.sm  CTMC: mean queue, throughput, P(full)
-│   ├── aggregate.props        CSL properties for the aggregate model
-│   ├── bus_stop_mdp.nm        MDP: best vs worst dispatch policy (hold vs depart)
-│   └── mdp.props              PCTL properties + strategy export
-├── 2stop/                     Stage 2 - 2-stop corridor
-│   ├── corridor_2stop.sm      CTMC: shared-bus coupling (downstream starved)
-│   └── corridor.props         CSL: mean queue / throughput / P(full) per stop
-├── 3stop/                     Stage 2 - 3-stop corridor
-│   ├── corridor_3stop.sm      CTMC: coupling accumulates downstream
-│   └── corridor_3stop.props   CSL: per-stop queues and saturation
-├── real_data/                 Real-data case study
-│   ├── real_data_case.py      real route-77 timetable -> time-dependent mu_bus -> reliability
-│   ├── plot_real_data.py      plots the time-of-day reliability / wait
-│   └── real_data_reliability.png
-├── A0verify/                  fig 1 data (reliability vs queue position)
-├── fig2_reliability_vs_frequency/
+├── 1stop/                          # single-stop PRISM models (Stage 1)
+│   ├── bus_stop_tagged.sm              tagged-passenger CTMC
+│   ├── tagged.props
+│   ├── bus_stop_aggregate.sm           aggregate CTMC
+│   ├── aggregate.props
+│   ├── bus_stop_mdp.nm                 dispatch-control MDP
+│   └── mdp.props
+├── 2stop/                          # 2-stop corridor (Stage 2)
+│   ├── corridor_2stop.sm
+│   └── corridor.props
+├── 3stop/                          # 3-stop corridor (Stage 2)
+│   ├── corridor_3stop.sm
+│   └── corridor_3stop.props
+├── A0_verify/                      # baseline / verification artifacts
+├── fig2_reliability_vs_frequency/  # single-stop parameter studies (PRISM experiments)
 ├── fig3_timeout_vs_patience/
 ├── fig4_waiting_vs_frequency/
 ├── fig5_reliability_freq_x_capacity/
-├── dt_loop.py                 Stage-1 digital-twin loop + validation engine
-├── dt_reliability_curve.png   reliability vs frequency, with SLA + recommendation
-├── corridor_simulate.py       corridor: discrete-event simulation vs PRISM (strong check)
-├── corridor_results.png       corridor: queues and P(full) growing downstream
-├── plot_corridor.py           generates corridor_results.png
-├── scalability_growth.png     state-space growth (~x40 per stop) -> SMC
-├── plot_scalability.py        generates scalability_growth.png
+├── real_data/                      # real-timetable case study, RV, digital twin
+│   ├── route77_data.py                shared real timetable  (SINGLE SOURCE OF TRUTH)
+│   ├── real_data_case.py              time-of-day reliability table
+│   ├── plot_real_data.py              time-of-day reliability figure
+│   ├── rv_monitor.py                  runtime-verification monitor + figure
+│   └── dt_loop.py                     digital-twin loop (synthetic + real modes)
+├── corridor_params.py              shared corridor params + PRISM reference  (SINGLE SOURCE OF TRUTH)
+├── corridor_simulate.py            corridor DES vs PRISM cross-validation
+├── plot_corridor.py                corridor results figure
+├── plot_scalability.py             scalability growth figure
+├── scalability_growth.png
+├── run_all.py                      one-command reproduction of all Python scripts
 └── README.md
 ```
 
-> Note: an independent numerical cross-validation of the corridor models is also
-> available (`corridor_verify.py`); if not present in your tree it can be
-> regenerated. The discrete-event check (`corridor_simulate.py`) is the stronger,
-> independent-paradigm validation and is included here.
+Two **shared modules** act as single sources of truth so that data and
+parameters are edited in exactly one place:
+
+- `real_data/route77_data.py` — the real departure timetable, imported by
+  `real_data_case.py`, `plot_real_data.py`, `rv_monitor.py`, and `dt_loop.py`.
+- `corridor_params.py` — the corridor model parameters **and** the PRISM-verified
+  reference values, imported by `corridor_simulate.py`. The parameter values here
+  must match the constants in `2stop/` and `3stop/` `.sm` files.
 
 ---
 
-## Canonical parameters
+## Requirements
 
-Single stop: `lambda=2.0`, `mu_bus=0.22`, `theta=0.03`, `Cap=10`, `K=30`.
-Corridor:    `lambda=1.6` (each stop), `mu_bus=0.5`, `mu_travel=0.6`,
-`theta=0.03`, `Cap=10`, `K=20`.
+- **PRISM 4.10.1** (for the model-checking side; GUI used for Verify/Experiments).
+- **Python 3.9+** with `numpy`, `scipy`, `matplotlib`:
+
+  ```bash
+  pip install numpy scipy matplotlib
+  ```
 
 ---
 
-## How to run
+## How to reproduce
 
-### PRISM (install from prismmodelchecker.org)
+### PRISM side (model checking)
 
-Open each model in the PRISM GUI: **Open Model** -> **Build Model** ->
-**Open Properties List** -> select the `.props` -> **Verify**. The parameter
-sweeps for the Stage-1 figures were produced with **Properties -> New
-Experiment**, varying one constant (e.g. `mu_bus`, `Cap`, `theta`, `A0`).
+Open the relevant `.sm` / `.nm` model and its `.props` in the PRISM GUI, build,
+and **Verify** (or run the parameter studies under **Experiments** for the
+`fig*` studies). The verified corridor results are recorded in
+`corridor_params.py` so the Python cross-validation can check against them.
 
-```
-1stop/bus_stop_tagged.sm     + 1stop/tagged.props
-1stop/bus_stop_aggregate.sm  + 1stop/aggregate.props
-1stop/bus_stop_mdp.nm        + 1stop/mdp.props
-2stop/corridor_2stop.sm      + 2stop/corridor.props
-3stop/corridor_3stop.sm      + 3stop/corridor_3stop.props
-```
+### Python side (validation, real data, figures)
 
-### Python (no PRISM needed)
+From the project root:
 
 ```bash
-python3 dt_loop.py                  # Stage-1 digital-twin loop + validation
-python3 corridor_simulate.py        # corridor: discrete-event simulation vs PRISM
-python3 real_data/real_data_case.py # real timetable -> time-of-day reliability
-python3 real_data/plot_real_data.py # plot for the real-data case
-python3 plot_corridor.py            # regenerate the corridor figure
-python3 plot_scalability.py         # regenerate the scalability figure
+python run_all.py
 ```
 
-Python deps: `numpy`, `scipy` (corridor solves), `matplotlib` (plots).
+This runs every standalone Python script in order, each from its own folder, and
+prints a PASS/FAIL summary. To run a single component instead:
+
+```bash
+cd real_data && python dt_loop.py        # digital-twin loop (synthetic + real)
+cd real_data && python rv_monitor.py     # runtime-verification monitor
+python corridor_simulate.py              # corridor DES vs PRISM
+```
+
+> Note: `corridor_simulate.py` uses a long simulated horizon (`SIM_T = 2,000,000`)
+> for low Monte-Carlo noise, so the 3-stop run takes a little while.
 
 ---
 
-## The modelling decisions (defend these in the viva)
+## Components
 
-**1. CTMC and MDP are PARALLEL models of the same stop, not layered.** The two
-CTMCs answer reliability/waiting questions; the MDP is a *separate* model used
-to study control. The MDP is discrete-time on purpose (PRISM's `mdp` is
-discrete-time and control decisions are made at discrete epochs); passenger
-arrivals are continuous-time Poisson, so the reliability models are CTMCs
-(exponential rates + CSL), avoiding DTMC discretisation artefacts.
+**Single stop (`1stop/`).** The tagged CTMC answers `P=? [F<=T tagged_served]`
+and `R{"wait"}=? [F done]`; the aggregate CTMC gives steady-state queue and
+throughput; the MDP optimises dispatch. Parameter studies (`fig2`–`fig5`)
+sweep frequency, patience, and capacity.
 
-**1b. Parameter coherence.** All three single-stop models share one parameter
-set. The MDP's per-slot probabilities are DERIVED from the CTMC rates via
-`p = 1 - exp(-rate*dt)`, so it describes the *same* system.
+**Corridor (`2stop/`, `3stop/`, `corridor_simulate.py`).** A shared bus serves
+stops in sequence. `corridor_simulate.py` is an **independent** discrete-event
+(Monte-Carlo) simulation that builds no matrix; agreement with the exact
+PRISM results is therefore a strong cross-validation. It now imports parameters
+and PRISM reference values from `corridor_params.py` and **auto-checks** each
+property (gap + PASS/CHECK).
 
-**2. A "tagged passenger" model for per-passenger properties.** Under FIFO bulk
-service only the passengers *ahead* affect boarding, keeping the state space
-tiny (`ahead x tag`).
+**Real-data case study (`real_data/real_data_case.py`, `plot_real_data.py`).**
+Estimates a real, time-of-day-dependent bus rate from the route-77 timetable and
+feeds it into the single-stop model, producing a full-day reliability profile.
 
-**3. The reward trap.** `R=? [ F "served" ]` returns +infinity (reneging paths
-never reach `served`). Target an absorbing condition reached w.p. 1, e.g.
-`R{"wait"}=? [ F "done" ]` with `done = served | timeout`.
+**Runtime-verification monitor (`real_data/rv_monitor.py`).** Replays one real
+day as an event stream, **re-estimates** the bus rate online after every arrival
+(MLE from recent inter-arrival gaps), and re-checks the SLA in real time, raising
+and clearing alerts as service degrades and recovers. This is the
+runtime-verification view (one real trajectory, checked as it unfolds), as
+opposed to PRISM's offline exhaustive checking.
 
-**4. Corridor coupling (Stage 2).** A single bus traverses the corridor: it
-boards up to `Cap` at stop 1, then travels carrying that load, so it reaches
-stop 2 with only the LEFTOVER seats (`seats = Cap - boarded upstream`). Heavy
-demand upstream starves downstream stops. With identical demand at every stop,
-any downstream disadvantage is therefore due PURELY to coupling -- a controlled
-experiment that needs synthetic (equal) parameters. One bus is in the corridor
-at a time. The 3-stop file repeats the pattern with a second travel leg.
+**Digital-twin loop (`real_data/dt_loop.py`).** Runs the closed loop
+`data → estimate → verify → decide` in two modes:
 
----
-
-## Validation (every synthetic result cross-validated)
-
-| stage | independent check | result |
-|-------|-------------------|--------|
-| Single stop | DES simulation vs analytic CTMC | P(served<=15): 0.749 vs 0.756 (gap 0.008) |
-| Single stop | aggregate+Little vs tagged vs DES | mean wait 7.15 / 6.23 / 6.13 min |
-| Corridor 2-stop | discrete-event simulation vs PRISM | queue1 4.64, queue2 11.23 (match) |
-| Corridor 3-stop | discrete-event simulation vs PRISM | queues 6.64 / 16.98 / 19.42 (match) |
-
-The corridor discrete-event simulation (`corridor_simulate.py`) is a genuinely
-DIFFERENT paradigm from PRISM (random sampling vs equation-solving), so its
-agreement is strong evidence the model is correct, not merely correctly
-implemented. PRISM reference values embedded in the script were obtained by
-independent Verify runs in PRISM 4.10.1 (steady-state queue lengths and P(full)
-for both corridors).
-
-The real-data case study is not separately cross-validated: it reuses the
-already-validated single-stop model and only substitutes a real, timetable-derived
-service rate.
+- *Synthetic* — known-truth simulation; the exact CTMC solve is cross-checked
+  against the simulation (this is the model-validation backbone). Estimates
+  λ and θ; the bus rate is a control variable.
+- *Real* — ingests the route-77 timetable, estimates the real bus rate, verifies
+  the SLA, and searches for the frequency that would meet it. Estimates the bus
+  rate; demand (λ, θ) is assumed.
 
 ---
 
-## The digital-twin loop
+## Data provenance
 
-```
-PHYSICAL (real timetable or DES)
-   -> ESTIMATOR (service rate mu_bus; with a real timetable, time-dependent)
-      -> CTMC MODEL rebuilt from the estimate
-         -> VERIFY reliability against the SLA (>= 0.95)
-            -> DECISION: adjust frequency to restore the SLA; feed back.
-```
+Real timetable: **First Glasgow route 77**, **Partick Bus Station (stance 1)**,
+towards Glasgow Airport. Source: [bustimes.org](https://bustimes.org/) (timetable
+data from the Traveline National Dataset, TNDS), for **Tuesday 23 June 2026**.
+Departure times were manually verified against the operator timetable and are
+stored in `real_data/route77_data.py`.
 
-With synthetic data this is a proof-of-concept loop. The real-data case study
-replaces the physical layer with the real First Glasgow route-77 timetable at
-Partick Bus Station (Tue 23 June 2026; bustimes.org / Traveline National Dataset)
-and extracts a TIME-DEPENDENT service rate. The loop is currently
-one-directional and offline; a real-time, two-way twin (e.g. via BODS GTFS-RT)
-is future work.
+A timetable gives the **bus service rate**, not passenger demand, so passenger
+arrival and patience parameters remain assumed in the real-data components.
 
 ---
 
 ## Key results
 
-- **Single stop:** reliability P(served<=15)=0.749; frequency is the dominant
-  lever (diminishing returns); capacity matters only at low frequency; MDP
-  control value ~2.6x but the always-depart baseline is within ~11% of optimal.
-- **Corridor:** identical demand, yet downstream queues are ~2.4x upstream
-  (2 stops) and saturate by stop 3 (P(full) 1.7% -> 37% -> 63%).
-- **Scalability:** reachable states 5,292 (2 stops) -> 213,003 (3 stops),
-  ~x40 per stop; exact model checking is untenable beyond a few stops ->
-  statistical model checking (SMC) is the route forward (Stage 3, write-only).
-- **Real data:** route-77 service at Partick is hourly overnight and ~15 min by
-  day, so the derived P(bus within 15 min) rises from ~0.22 overnight to ~0.64
-  in the daytime, tracking the real, time-dependent service.
+| Result | Value |
+|---|---|
+| Single-stop reliability `P(served within 15)` | 0.749 (exact) vs 0.756 (sim), gap 0.008 |
+| Single-stop mean time-in-system | 6.23 min (exact) vs 6.13 min (sim) |
+| MDP dispatch (person-slots) | optimal 402.4 / baseline 446.0 / worst 1047.4 |
+| Corridor 2-stop | queue1 4.637, queue2 11.228, P(full2) 0.128 |
+| Corridor 3-stop | queue1 6.643, queue2 16.983, queue3 19.424, P(full3) 0.631 |
+| State-space growth | ≈ ×40 reachable states per added stop |
+| Real route-77 daytime headway | ≈ 14 min (μ ≈ 0.069 /min) |
+| Real daytime `P(served within 15)` | 0.527 → twin recommends μ\* ≈ 0.640 /min (≈ 1.6 min headway) |
+| RV monitor (illustrative target 0.50) | alert raised 02:17, cleared 07:04, raised 20:43 |
 
 ---
 
-## Limitations and future work
+## Scope and honesty notes
 
-State-space explosion bounds exact PMC (Stage 3); the route forward is SMC
-(discussed, not implemented). The digital-twin loop is one-directional and
-offline. Real data so far calibrates a single stop's service rate (not passenger
-demand, which timetables lack) and not yet a real corridor. Future work:
-real-corridor calibration (travel times from adjacent-stop timetable
-differences), passenger-demand data, a real-time twin via BODS GTFS-RT, an SMC
-implementation, and MDP dispatch control on the corridor.
+- The **digital-twin loop is a one-directional, offline proof of concept**: it
+  reads data and verifies/recommends, but does not actuate a live system.
+- The **RV monitor replays** a real timetable as an event stream; connecting a
+  live GTFS-RT feed is future work.
+- The synthetic SLA of 0.95 within 15 minutes is **not attainable** by a real
+  low-frequency route; the RV demo therefore uses an illustrative operator target
+  of 0.50, while still reporting the 0.95 comparison.
+- The CTMC and MDP are **parallel models of the same system**, not layered.
+- Model-validation weight sits with the **synthetic** results (known ground
+  truth); the real-data components demonstrate applicability, not validation.

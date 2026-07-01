@@ -12,15 +12,21 @@ the timetable and feed it into the single-stop CTMC, replacing the synthetic
 mu_bus used in Stages 1-2 -- implementing the supervisor's suggestion of a
 time-dependent rate fetched from a real timetable.
 
-Note: a timetable gives the BUS service rate (mu_bus), not passenger demand,
-so lambda/theta/Cap/K remain assumed (as in Stage 1). P(bus<=15m) depends
-only on mu_bus and is therefore the cleanest, demand-independent indicator;
-the expected wait additionally depends on the assumed demand, so at low
-night frequency it grows large (the stop tends towards saturation under a
-fixed daytime demand) -- this is a consequence of the fixed-demand assumption.
+Modelling notes:
+  * A timetable gives the BUS service rate (mu_bus), not passenger demand, so
+    lambda/theta/Cap/K remain assumed (as in Stage 1).
+  * POISSON vs SCHEDULED (#1): the CTMC treats bus arrivals as Poisson. A
+    punctual scheduled service is near-deterministic, for which
+    P(bus<=T) = min(T/h, 1); the table shows BOTH columns. Real service lies
+    between them (the Poisson value is the conservative lower bound).
+  * WAIT (#3, corrected): with reneging, Little's law uses the TOTAL exit
+    flow, so W = L / (throughput + renege_rate). Dividing by boarding
+    throughput alone (the previous version) overstates the wait, badly at
+    night where reneging dominates.
 """
 import numpy as np
 from route77_data import DEP, to_min
+from stop_model import aggregate, p_bus_within_poisson, p_bus_within_scheduled
 
 t=np.array([to_min(x) for x in DEP]); gaps=np.diff(t).astype(float)
 mids=(t[:-1]+t[1:])/2/60.0          # midpoint (hour of day) of each gap
@@ -33,37 +39,33 @@ bands=[("Night 00-05h",   0,  5),
        ("Evening 15-20h",15, 20),
        ("Late 20-24h",   20, 24)]
 
-def aggregate(lam,mu_bus,theta,Cap,K):
-    n=K+1; Q=np.zeros((n,n))
-    for i in range(n):
-        if i<K: Q[i,i+1]+=lam
-        if i>0: Q[i,i-1]+=i*theta
-        Q[i,max(i-Cap,0)]+=mu_bus
-    for i in range(n): Q[i,i]=-(Q[i].sum()-Q[i,i])
-    A=np.vstack([Q.T,np.ones(n)]); b=np.zeros(n+1); b[-1]=1
-    pi,*_=np.linalg.lstsq(A,b,rcond=None)
-    L=float((pi*np.arange(n)).sum())
-    thr=float(sum(pi[i]*min(i,Cap)*mu_bus for i in range(n)))
-    return L,thr
-
 LAM,THETA,CAP,K = 0.40, 0.03, 10, 30   # demand assumed (as in Stage 1)
+T_SLA = 15.0
 
 print("Route 77 at Partick Bus Station (First Glasgow) -- real timetable, Tue 23 Jun 2026")
-print("(full day; mu_bus estimated per band from real headways)\n")
-print(f"{'Time band':<18}{'headway':>10}{'mu/hour':>9}{'mu/min':>9}{'P(bus<=15m)':>13}{'wait(min)':>11}")
-print("-"*70)
+print("(full day; mu_bus estimated per band from real headways)")
+print("(P15 shown under BOTH headway assumptions; wait uses Little with reneging)\n")
+print(f"{'Time band':<18}{'headway':>10}{'mu/hour':>9}{'mu/min':>9}"
+      f"{'P15 Poisson':>13}{'P15 sched':>11}{'wait(min)':>11}")
+print("-"*81)
 band_mu={}
 for name,lo,hi in bands:
     sel=(mids>=lo)&(mids<hi)
     if sel.sum()==0: continue
     h=gaps[sel].mean(); mu=1/h; band_mu[name]=(h,mu)
-    L,thr=aggregate(LAM,mu,THETA,CAP,K); W=L/thr if thr>0 else float('nan')
-    p15=1-np.exp(-mu*15)
-    print(f"{name:<18}{h:>7.1f}min{60/h:>9.3f}{mu:>9.4f}{p15:>13.2f}{W:>11.1f}")
-print("-"*70)
+    L,thr,ren=aggregate(LAM,mu,THETA,CAP,K)
+    W=L/(thr+ren) if (thr+ren)>0 else float('nan')     # Little, corrected (#3)
+    p15  = p_bus_within_poisson(mu, T_SLA)
+    p15d = p_bus_within_scheduled(h, T_SLA)
+    print(f"{name:<18}{h:>7.1f}min{60/h:>9.3f}{mu:>9.4f}{p15:>13.2f}{p15d:>11.2f}{W:>11.1f}")
+print("-"*81)
 
 night=band_mu["Night 00-05h"][0]; midday=band_mu["Midday 09-15h"][0]
 print(f"\nNight headway ~{night:.0f} min vs midday ~{midday:.0f} min: a {night/midday:.0f}x")
 print("difference in service rate, straight from the real timetable. Reliability")
-print("P(bus<=15m) rises through the morning, peaks at midday, and falls again")
-print("through the evening into the sparse late-night service.")
+print("rises through the morning, peaks at midday, and falls again through the")
+print("evening into the sparse late-night service.")
+print("\nReading the two P15 columns: under a punctual schedule every daytime band")
+print("would be near-certain (h <= 15 min => P=1); the Poisson column is the")
+print("worst case for irregular arrivals. The gap between them IS the value of")
+print("punctuality -- see the scheduled-vs-Poisson limitations discussion.")

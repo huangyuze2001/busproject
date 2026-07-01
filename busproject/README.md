@@ -67,11 +67,13 @@ busproject/
 │   ├── real_data_case.py              time-of-day reliability table
 │   ├── plot_real_data.py              time-of-day reliability figure
 │   ├── rv_monitor.py                  runtime-verification monitor + figure
-│   └── dt_loop.py                     digital-twin loop (synthetic + real modes)
+│   ├── dt_loop.py                     digital-twin loop (synthetic + real modes)
+│   └── stop_model.py                  shared aggregate-CTMC solver  (SINGLE SOURCE OF TRUTH)
 ├── corridor_params.py              shared corridor params + PRISM reference  (SINGLE SOURCE OF TRUTH)
 ├── corridor_simulate.py            corridor DES vs PRISM cross-validation
 ├── plot_corridor.py                corridor results figure
 ├── plot_scalability.py             scalability growth figure
+├── plot_prism_studies.py           replots of the PRISM parameter studies (fig2-5, A0)
 ├── scalability_growth.png
 ├── run_all.py                      one-command reproduction of all Python scripts
 └── README.md
@@ -85,6 +87,9 @@ parameters are edited in exactly one place:
 - `corridor_params.py` — the corridor model parameters **and** the PRISM-verified
   reference values, imported by `corridor_simulate.py`. The parameter values here
   must match the constants in `2stop/` and `3stop/` `.sm` files.
+- `real_data/stop_model.py` — the aggregate single-stop CTMC solver (with the
+  reneging-aware Little's-law components), imported by `real_data_case.py` and
+  `plot_real_data.py`.
 
 ---
 
@@ -155,12 +160,23 @@ and clearing alerts as service degrades and recovers. This is the
 runtime-verification view (one real trajectory, checked as it unfolds), as
 opposed to PRISM's offline exhaustive checking.
 
+**PRISM parameter-study replots (`plot_prism_studies.py`).** Re-renders the
+five PRISM Experiments figures (fig2–fig5 and the A0 sweep) from the exported
+CSVs in a style consistent with the other project figures. Overlays the
+closed-form solutions on fig2–fig4 (with A0 < Cap the capacity constraint never
+binds, so the tagged model admits closed forms; PRISM reproduces them to
+numerical precision, max deviation < 1e-7) and collapses the identical
+Cap ≥ 10 curves of fig5 into one labelled line (verified by assertion).
+
 **Digital-twin loop (`real_data/dt_loop.py`).** Runs the closed loop
 `data → estimate → verify → decide` in two modes:
 
 - *Synthetic* — known-truth simulation; the exact CTMC solve is cross-checked
   against the simulation (this is the model-validation backbone). Estimates
-  λ and θ; the bus rate is a control variable.
+  λ and θ; the bus rate is a control variable. After the control search, the
+  recommendation is **actuated in silico** and the loop closed: re-simulate
+  under μ\*, re-estimate, re-verify (post-actuation reliability 0.970 vs the
+  conservative pre-actuation prediction 0.950).
 - *Real* — ingests the route-77 timetable, estimates the real bus rate, verifies
   the SLA, and searches for the frequency that would meet it. Estimates the bus
   rate; demand (λ, θ) is assumed.
@@ -189,10 +205,10 @@ arrival and patience parameters remain assumed in the real-data components.
 | MDP dispatch (person-slots) | optimal 402.4 / baseline 446.0 / worst 1047.4 |
 | Corridor 2-stop | queue1 4.637, queue2 11.228, P(full2) 0.128 |
 | Corridor 3-stop | queue1 6.643, queue2 16.983, queue3 19.424, P(full3) 0.631 |
-| State-space growth | ≈ ×40 reachable states per added stop |
+| State-space growth | ≈ ×26–40 reachable states per added stop (×40.3 measured 2→3; structural ratio 21·(k+1)/k) |
 | Real route-77 daytime headway | ≈ 14 min (μ ≈ 0.069 /min) |
-| Real daytime `P(served within 15)` | 0.527 → twin recommends μ\* ≈ 0.640 /min (≈ 1.6 min headway) |
-| RV monitor (illustrative target 0.50) | alert raised 02:17, cleared 07:04, raised 20:43 |
+| Real daytime `P(served within 15)` | 0.523 → twin recommends μ\* ≈ 0.640 /min (≈ 1.6 min headway) |
+| RV monitor (illustrative target 0.50) | in ALERT from monitoring start (02:17; needs 2 gaps to estimate), cleared 07:04, raised 20:43 |
 
 ---
 
@@ -208,3 +224,23 @@ arrival and patience parameters remain assumed in the real-data components.
 - The CTMC and MDP are **parallel models of the same system**, not layered.
 - Model-validation weight sits with the **synthetic** results (known ground
   truth); the real-data components demonstrate applicability, not validation.
+- **Scheduled vs Poisson headways**: all real-data reliability figures treat bus
+  arrivals as Poisson. A punctual scheduled service is near-deterministic, for
+  which `P(bus within T) = min(T/h, 1)` — the Poisson value is a conservative
+  lower bound (real, somewhat irregular service lies between the two). The
+  case-study table and figure now show **both** columns.
+- **Waiting times use Little's law with reneging**: `W = L / (throughput +
+  renege rate)`. Dividing by boarding throughput alone (an earlier version)
+  overstates the wait — at night by ~3× (72 → 22.8 min).
+- **`fig5` capacity curves coincide for Cap ≥ 10 by construction**: in the
+  tagged model `ahead` never increases, so with `A0 = 8` any capacity above
+  `A0+1` is never binding — the four curves are identical, not a plotting bug.
+  Relatedly, with the capacity constraint inactive the tagged model admits
+  closed forms (`P(timeout) = θ/(θ+μ)`, `E[wait] = 1/(θ+μ)`,
+  `P(served ≤ T) = μ/(μ+θ)·(1−e^{−(μ+θ)T})`), which the `fig2`–`fig4` PRISM
+  results reproduce exactly — a free analytical sanity check.
+- **Simulation censoring**: passengers unresolved at the simulation horizon are
+  dropped; for the long horizons used the bias is negligible.
+- All 3-stop reference values in `corridor_params.py`, including `P(full1)` and
+  `P(full2)`, are **PRISM-verified** (4.10.1, 2026-07-01) and independently
+  cross-checked by the DES.

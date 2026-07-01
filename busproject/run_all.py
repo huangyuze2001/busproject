@@ -29,6 +29,7 @@ SCRIPTS = [
     ("real_data", "plot_real_data.py",    "Real-data reliability figure"),
     (".",         "plot_corridor.py",     "Corridor results figure"),
     (".",         "plot_scalability.py",  "Scalability growth figure"),
+    (".",         "plot_prism_studies.py","Replots of the five PRISM parameter studies (fig2-5, A0)"),
 ]
 
 

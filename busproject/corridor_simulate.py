@@ -52,6 +52,7 @@ def simulate(n_stops, T=SIM_T, seed=0):
         # pick which event fired (probability proportional to rate)
         r = rng.random()*total
         c = 0.0
+        chosen = kinds[-1]   # guard: float round-off could leave r > sum(rates)
         for rate, kind in zip(rates, kinds):
             c += rate
             if r <= c: chosen = kind; break
@@ -94,7 +95,10 @@ def report(n_stops, T=SIM_T, seed=1):
         sim = sim_value(name, L, F)
         gap = abs(sim - ref)
         ok = passed(sim, ref); all_ok &= ok
-        fmt = ">12.3f" if name.startswith("P(") else ">12.2f"
+        # uniform 3-d.p. display so that the printed sim, PRISM and gap
+        # columns are arithmetically consistent to the reader (the gap is
+        # computed at full precision either way)
+        fmt = ">12.3f"
         print(f"  {name:<12}{sim:{fmt}}{ref:>10.3f}{gap:>9.3f}   {'PASS' if ok else 'CHECK'}")
     return all_ok
 

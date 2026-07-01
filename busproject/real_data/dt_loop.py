@@ -2,7 +2,10 @@
 Digital-twin loop for the single-stop bus model.
 
 Runs the closed loop:  data -> parameter estimation -> CTMC verification
--> SLA decision (control search), in TWO modes:
+-> SLA decision (control search) -> [synthetic mode only] closed-loop
+re-validation: the recommendation is actuated on the simulated physical
+layer, the system re-observed, the model re-estimated and the SLA
+re-verified (a second full turn of the twin loop), in TWO modes:
 
   * SYNTHETIC mode (unchanged): the physical layer is a discrete-event
     simulation with KNOWN true parameters. Because the truth is known, this
@@ -36,7 +39,10 @@ try:
 except ImportError:
     dep_minutes = None   # real mode will report a clear message if data missing
 
-rng = np.random.default_rng(7)
+# NOTE (#7 reproducibility): each simulate() call creates its OWN seeded rng.
+# Previously a module-level rng was shared, so run_real()'s numbers depended on
+# run_synthetic() having consumed part of the stream first -- running real mode
+# alone gave different results. Now every mode is independently reproducible.
 
 
 
@@ -59,8 +65,11 @@ class Pax:
         self.wait = None
 
 
-def simulate(lam, mu_bus, theta, C, horizon=20000.0):
-    """Clean discrete-event simulation. Returns list[Pax] (only resolved ones)."""
+def simulate(lam, mu_bus, theta, C, horizon=20000.0, seed=7):
+    """Clean discrete-event simulation. Returns list[Pax] (only resolved ones).
+    NOTE: passengers still unresolved at the horizon are censored (dropped);
+    for long horizons the resulting bias is negligible (see limitations)."""
+    rng = np.random.default_rng(seed)
     t = 0.0
     queue = []            # list[Pax], FIFO
     done = []
@@ -144,14 +153,22 @@ def expected_resolution_time(Q, a0, M):
 
 
 def reliability_for_arrival(mu_bus, theta, C, M, T, ahead_dist):
-    """Weight per-a results by the distribution of #ahead seen at arrival (PASTA)."""
+    """Weight per-a results by the distribution of #ahead seen at arrival (PASTA).
+
+    PERFORMANCE (#11): Q depends only on (mu_bus, theta, C), not on the start
+    state a, so the transient solution expm(Q*T) and the absorption-time solve
+    are computed ONCE and then read off row-by-row -- previously they were
+    recomputed for every a in ahead_dist (~30x redundant work per mu)."""
     Q, SERVED, RENEGED = build_tagged_Q(mu_bus, theta, C, M)
+    PT = expm(Q * T)                                   # one matrix exponential
+    QT = Q[:M + 1, :M + 1]
+    x = np.linalg.solve(-QT, np.ones(M + 1))           # one absorption solve
     p_served = 0.0
     e_wait = 0.0
     for a, w in ahead_dist.items():
         a = min(a, M)
-        p_served += w * prob_served_within(Q, SERVED, a, T)
-        e_wait   += w * expected_resolution_time(Q, a, M)
+        p_served += w * PT[a, SERVED]
+        e_wait   += w * x[a]
     return p_served, e_wait
 
 
@@ -244,9 +261,45 @@ def run_synthetic():
     print("\n" + "=" * 64)
     print("STEP 4 - DECISION (search headway to meet the SLA)")
     print("=" * 64)
-    _twin_decision(theta_hat, TRUE["C"], M, T, SLA, ahead_dist, mu_now, p_served_T,
-                   fname="dt_reliability_curve.png",
-                   title="Digital-twin control search: reliability vs bus frequency")
+    rec_mu, rec_p = _twin_decision(
+        theta_hat, TRUE["C"], M, T, SLA, ahead_dist, mu_now, p_served_T,
+        fname="dt_reliability_curve.png",
+        title="Digital-twin control search: reliability vs bus frequency")
+
+    # ---- STEP 5: close the loop (in silico) --------------------------------
+    # The recommendation is ACTUATED on the (simulated) physical layer, the
+    # system is observed under the new operating point, the model is
+    # RE-ESTIMATED from the new log, and the SLA is RE-VERIFIED. This is a
+    # second full turn of the twin loop: act -> observe -> estimate -> verify.
+    # Only possible in MODE A, where the physical layer is a simulation we can
+    # actuate; the real twin remains one-directional (see MODE B).
+    print("\n" + "=" * 64)
+    print("STEP 5 - CLOSED-LOOP RE-VALIDATION (actuate in silico -> re-verify)")
+    print("=" * 64)
+    print(f"actuating recommendation: mu_bus {mu_now:g} -> {rec_mu:.3f} /min "
+          f"(headway {1/rec_mu:.2f} min)")
+    done2 = simulate(TRUE["lam"], rec_mu, TRUE["theta"], TRUE["C"],
+                     horizon=40000.0, seed=23)
+    obs2 = max(p.arrival for p in done2)
+    emp2 = np.mean([p.outcome == "served" and p.wait <= T for p in done2])
+    lam2, theta2, dist2 = estimate_params(done2, obs2)
+    print(f"observed under mu*        : emp P(served within {T:g}) = {emp2:.3f}")
+    print(f"re-estimated              : lambda_hat = {lam2:.3f}, "
+          f"theta_hat = {theta2:.3f}")
+    print(f"#ahead at arrival now     : mean = "
+          f"{sum(a*w for a,w in dist2.items()):.2f}  (was "
+          f"{sum(a*w for a,w in ahead_dist.items()):.2f} before actuation)")
+    p2, _ = reliability_for_arrival(rec_mu, theta2, TRUE["C"], M, T, dist2)
+    gap2 = abs(p2 - emp2)
+    print(f"re-verified (CTMC)        : P=? [F<={T:g} served] = {p2:.3f}")
+    print(f"--> model-vs-physical gap at the NEW operating point = {gap2:.3f}  "
+          f"({'PASS' if gap2 < 0.03 else 'CHECK'})")
+    print(f"--> SLA after actuation   : {emp2:.3f} vs {SLA}  "
+          f"({'MET' if emp2 >= SLA else 'NOT MET'})")
+    print("note: STEP 4's prediction used the PRE-actuation ahead-distribution")
+    print("(queues under the old, slower service), so it is CONSERVATIVE; the")
+    print("post-actuation system has shorter queues and does better -- which is")
+    print("exactly what this closed-loop turn measures rather than assumes.")
 
 
 # 4b. REAL RUN: ingest the real timetable, estimate mu_bus, verify + decide
@@ -273,11 +326,21 @@ def run_real(window=(7, 19)):
     print(f"real mean headway         : {headway:.1f} min")
     print(f"estimated mu_bus          : {mu_real:.4f} /min  ({60*mu_real:.2f} /hour)")
     print("(demand lambda, theta ASSUMED -- a timetable gives the bus rate only)")
+    print("(ASSUMPTION: bus arrivals treated as POISSON with this rate. A punctual")
+    print(" SCHEDULED service is near-deterministic, for which P(bus within T) =")
+    print(f" min(T/h,1) = {min(15/headway,1):.3f} here -- the Poisson figure below is a")
+    print(" conservative lower bound. See the scheduled-vs-Poisson limitations note.)")
 
     print("\n" + "=" * 64)
-    print("STEP 2 - ESTIMATOR + cross-check (assumed demand + real mu_bus)")
+    print("STEP 2 - CONSISTENCY CHECK (assumed demand + real mu_bus)")
     print("=" * 64)
-    done = simulate(LAM, mu_real, THETA, C, horizon=40000.0)
+    # NOTE (#6): this step is DELIBERATELY circular -- lambda and theta are
+    # assumed, fed into a simulation, and re-estimated from it. It carries NO
+    # independent information about the real system; it only checks that the
+    # estimator + verifier machinery is self-consistent at the real operating
+    # point. The ahead-distribution comes from this synthetic simulation too.
+    # Model-validation weight sits entirely with MODE A (known ground truth).
+    done = simulate(LAM, mu_real, THETA, C, horizon=40000.0, seed=11)
     obs_time = max(p.arrival for p in done)
     emp_p_served_T = np.mean([p.outcome == "served" and p.wait <= T for p in done])
     lam_hat, theta_hat, ahead_dist = estimate_params(done, obs_time)
@@ -300,6 +363,10 @@ def run_real(window=(7, 19)):
     _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_real, p_served_T,
                    fname="dt_reliability_curve_real.png",
                    title="Digital-twin on real data: reliability vs bus frequency")
+    print("\n(one-directional twin: there is NO actuation path back to the real")
+    print(" service, so the loop cannot be closed here -- the recommendation is")
+    print(" advisory. Closed-loop re-validation is demonstrated in MODE A, where")
+    print(" the physical layer is a simulation the twin can actuate.)")
 
 
 # shared STEP-4 logic (SLA check + control search + figure)
@@ -340,6 +407,7 @@ def _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_now, p_served_T,
     fig.tight_layout()
     fig.savefig(fname, dpi=130)
     print(f"saved figure -> {fname}")
+    return rec_mu, rec_p
 
 
 if __name__ == "__main__":

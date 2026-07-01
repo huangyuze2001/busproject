@@ -24,5 +24,10 @@ K       = 20     # platform capacity per stop
 # keyed by number of stops; each maps a property name -> verified value.
 PRISM_REF = {
     2: {"queue1": 4.637, "queue2": 11.228, "P(full2)": 0.128},
-    3: {"queue1": 6.643, "queue2": 16.983, "queue3": 19.424, "P(full3)": 0.631},
+    3: {"queue1": 6.643, "queue2": 16.983, "queue3": 19.424, "P(full3)": 0.631,
+        # Verified in PRISM 4.10.1 (Build -> Verify, corridor_3stop.sm) on
+        # 2026-07-01: S=?["full1"] = 0.016709..., S=?["full2"] = 0.373337...
+        # (recorded to 3 d.p. consistently with the other entries). Also
+        # independently cross-checked by the DES in corridor_simulate.py.
+        "P(full1)": 0.017, "P(full2)": 0.373},
 }

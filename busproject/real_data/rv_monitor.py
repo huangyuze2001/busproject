@@ -44,6 +44,11 @@ def hhmm(minutes):
 
 
 def reliability(mu, w=W):
+    """P(next bus within w) under a POISSON arrival assumption.
+    A punctual scheduled service is near-deterministic, for which the same
+    indicator is min(w/headway, 1) -- the Poisson value is a conservative
+    lower bound. Kept Poisson here for consistency with the CTMC chapters;
+    see the scheduled-vs-Poisson limitations discussion."""
     return 1.0 - math.exp(-mu * w)
 
 
@@ -79,6 +84,11 @@ print("online estimate: mu_hat = 1/mean(last %d gaps);  check P(bus<=%.0fm) >= %
       % (WINDOW, W, SLA_TARGET))
 print("=" * 72)
 print("\nAlert log (verdict changes as the model is re-estimated):")
+print("  [coverage note: the online estimate needs 2 inter-arrival gaps, so")
+print("   monitoring STARTS at the 3rd arrival (02:17) -- service is already")
+print("   below target from midnight, and the first 'raised' therefore marks")
+print("   the START OF MONITORING, not the onset of degradation. Similarly,")
+print("   nothing is monitored after the last arrival (23:19).]")
 if not events:
     print("  (no verdict changes)")
 for t_evt, kind in events:

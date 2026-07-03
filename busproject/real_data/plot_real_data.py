@@ -19,17 +19,16 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from route77_data import DEP, to_min
-from stop_model import aggregate, p_bus_within_poisson, p_bus_within_scheduled
+from stop_model import (aggregate, p_bus_within_poisson,
+                        p_bus_within_scheduled, BANDS)
 
 t=np.array([to_min(x) for x in DEP]); gaps=np.diff(t).astype(float)
 mids=(t[:-1]+t[1:])/2/60.0
 
-bands=[("Night\n00-05h",    0,  5),
-       ("Early\n05-07h",    5,  7),
-       ("AM peak\n07-09h",  7,  9),
-       ("Midday\n09-15h",   9, 15),
-       ("Evening\n15-20h", 15, 20),
-       ("Late\n20-24h",    20, 24)]
+# bands imported from stop_model.py (single source of truth);
+# two-line tick labels derived by breaking at the last space
+bands = [(name.rsplit(' ', 1)[0] + '\n' + name.rsplit(' ', 1)[1], lo, hi)
+         for name, lo, hi in BANDS]
 
 LAM,THETA,CAP,K=0.40,0.03,10,30
 labels, headways, p15, p15_sched, waits = [],[],[],[],[]

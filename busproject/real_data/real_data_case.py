@@ -26,18 +26,14 @@ Modelling notes:
 """
 import numpy as np
 from route77_data import DEP, to_min
-from stop_model import aggregate, p_bus_within_poisson, p_bus_within_scheduled
+from stop_model import (aggregate, p_bus_within_poisson,
+                        p_bus_within_scheduled, BANDS)
 
 t=np.array([to_min(x) for x in DEP]); gaps=np.diff(t).astype(float)
 mids=(t[:-1]+t[1:])/2/60.0          # midpoint (hour of day) of each gap
 
-# Full-day bands (hour-of-day ranges)
-bands=[("Night 00-05h",   0,  5),
-       ("Early 05-07h",   5,  7),
-       ("AM peak 07-09h", 7,  9),
-       ("Midday 09-15h",  9, 15),
-       ("Evening 15-20h",15, 20),
-       ("Late 20-24h",   20, 24)]
+# Full-day bands: imported from stop_model.py (single source of truth)
+bands = BANDS
 
 LAM,THETA,CAP,K = 0.40, 0.03, 10, 30   # demand assumed (as in Stage 1)
 T_SLA = 15.0

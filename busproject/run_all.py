@@ -22,6 +22,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # (folder relative to ROOT, script, one-line description). "." = project root.
 SCRIPTS = [
+    (".",         "check_params_sync.py", "Assert .sm constants match corridor_params.py"),
     ("real_data", "dt_loop.py",           "Digital-twin loop: single-stop validation + synthetic & real twin"),
     (".",         "corridor_simulate.py", "Corridor DES vs PRISM cross-validation (2- and 3-stop)"),
     ("real_data", "real_data_case.py",    "Real timetable case study: time-of-day reliability table"),

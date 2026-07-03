@@ -54,3 +54,17 @@ def p_bus_within_scheduled(headway, T):
     for a passenger arriving uniformly at random: min(T/headway, 1).
     Real service lies between this optimistic bound and the Poisson value."""
     return min(T / headway, 1.0)
+
+
+# --- shared full-day analysis bands (single source of truth) -----------------
+# Used by real_data_case.py (Table 7.1) and plot_real_data.py (Figure 7.1).
+# Format: (name, start_hour, end_hour); a gap belongs to the band containing
+# its midpoint. Boundaries follow the service-level transitions in the real
+# route-77 timetable (overnight sparse / early ramp-up / peak / daytime /
+# evening / late thinning).
+BANDS = [("Night 00-05h",   0,  5),
+         ("Early 05-07h",   5,  7),
+         ("AM peak 07-09h", 7,  9),
+         ("Midday 09-15h",  9, 15),
+         ("Evening 15-20h",15, 20),
+         ("Late 20-24h",   20, 24)]

@@ -75,6 +75,7 @@ busproject/
 ├── plot_scalability.py             scalability growth figure
 ├── plot_prism_studies.py           replots of the PRISM parameter studies (fig2-5, A0)
 ├── scalability_growth.png
+├── check_params_sync.py            asserts .sm constants == corridor_params.py (runs first)
 ├── run_all.py                      one-command reproduction of all Python scripts
 └── README.md
 ```
@@ -86,10 +87,12 @@ parameters are edited in exactly one place:
   `real_data_case.py`, `plot_real_data.py`, `rv_monitor.py`, and `dt_loop.py`.
 - `corridor_params.py` — the corridor model parameters **and** the PRISM-verified
   reference values, imported by `corridor_simulate.py`. The parameter values here
-  must match the constants in `2stop/` and `3stop/` `.sm` files.
+  must match the constants in `2stop/` and `3stop/` `.sm` files — a requirement
+  that is now enforced automatically: `check_params_sync.py` parses the `.sm`
+  declarations and fails loudly on any mismatch (it runs first in `run_all.py`).
 - `real_data/stop_model.py` — the aggregate single-stop CTMC solver (with the
-  reneging-aware Little's-law components), imported by `real_data_case.py` and
-  `plot_real_data.py`.
+  reneging-aware Little's-law components) **and** the shared six-band day
+  partition (`BANDS`), imported by `real_data_case.py` and `plot_real_data.py`.
 
 ---
 

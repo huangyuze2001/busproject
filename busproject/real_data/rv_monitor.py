@@ -27,7 +27,7 @@ import math
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
-from route77_data import DEP, to_min, dep_minutes
+from route77_data import dep_minutes
 
 # ----------------------------------------------------------------------
 # Parameters

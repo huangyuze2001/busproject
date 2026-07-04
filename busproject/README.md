@@ -74,6 +74,7 @@ busproject/
 ├── plot_corridor.py                corridor results figure
 ├── plot_scalability.py             scalability growth figure
 ├── plot_prism_studies.py           replots of the PRISM parameter studies (fig2-5, A0)
+├── plot_mdp_policies.py            Figure 5.6: MDP dispatch-policy comparison
 ├── scalability_growth.png
 ├── check_params_sync.py            asserts .sm constants == corridor_params.py (runs first)
 ├── run_all.py                      one-command reproduction of all Python scripts
@@ -170,6 +171,13 @@ closed-form solutions on fig2–fig4 (with A0 < Cap the capacity constraint neve
 binds, so the tagged model admits closed forms; PRISM reproduces them to
 numerical precision, max deviation < 1e-7) and collapses the identical
 Cap ≥ 10 curves of fig5 into one labelled line (verified by assertion).
+
+**MDP policy figure (`plot_mdp_policies.py`).** Renders the dispatch-policy
+comparison (Figure 5.6) from the PRISM-verified MDP results — optimal (Rmin),
+fixed always-depart (hold action removed), and worst (Rmax) — in
+person-minutes, annotating the ~2.6× value of control and the ~10% benefit of
+holding at a single stop. Provenance of the three values is recorded in the
+script's docstring.
 
 **Digital-twin loop (`real_data/dt_loop.py`).** Runs the closed loop
 `data → estimate → verify → decide` in two modes:

@@ -31,6 +31,7 @@ SCRIPTS = [
     (".",         "plot_corridor.py",     "Corridor results figure"),
     (".",         "plot_scalability.py",  "Scalability growth figure"),
     (".",         "plot_prism_studies.py","Replots of the five PRISM parameter studies (fig2-5, A0)"),
+    (".",         "plot_mdp_policies.py", "Figure 5.6: MDP dispatch-policy comparison"),
 ]
 
 

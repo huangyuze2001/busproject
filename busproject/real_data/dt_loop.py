@@ -137,6 +137,10 @@ def build_tagged_Q(mu_bus, theta, C, M):
     return Q, SERVED, RENEGED
 
 
+# NOTE: the two helpers below are no longer called (reliability_for_arrival
+# computes expm/absorption once per Q for performance); they are kept as the
+# single-start-state reference implementations that mirror the PRISM queries
+# one-to-one, and as documentation of the correspondence.
 def prob_served_within(Q, SERVED, a0, T):
     """P=? [F<=T tag=1] starting with a0 ahead."""
     p0 = np.zeros(Q.shape[0]); p0[a0] = 1.0

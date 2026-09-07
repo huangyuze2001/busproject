@@ -18,10 +18,12 @@
 //    length dt and DERIVE the per-slot event probabilities from the SAME
 //    continuous-time rates used by the CTMC models, via the standard
 //        p = 1 - exp(-rate * dt)
-//    discretisation. dt is chosen small enough that "at most one event of
-//    each type per slot" is a good approximation (rate*dt << 1). Hence the
-//    MDP and the CTMC describe the same system with the same parameters --
-//    they are not two different parameterisations.
+//    discretisation. The baseline dt=0.25 min is deliberately treated as a
+//    COARSE approximation: at lambda=2/min, lambda*dt=0.5 and the probability
+//    of two or more Poisson passenger arrivals in a slot is about 9%. Smaller-dt
+//    sensitivity experiments are therefore provided in experiments/. The MDP
+//    is used primarily for relative policy comparison rather than as an exact
+//    reparameterisation of the continuous-time CTMC.
 // =====================================================================
 
 mdp
@@ -30,8 +32,8 @@ mdp
 const double lambda = 2.0;    // passenger arrival rate (per minute)
 const double mu_bus = 0.22;   // bus arrival rate (per minute)
 const double theta  = 0.03;   // per-passenger reneging rate (per minute)
-const int    Cap      = 10;     // bus capacity
-const int    K      = 30;     // station capacity   (same as aggregate CTMC)
+const int    Cap      = 10;     // effective boarding capacity available at the stop
+const int    K      = 30;     // platform queue bound (same as aggregate CTMC)
 
 // ---- discrete-time abstraction (derived from the rates above) ----
 const double dt     = 0.25;   // slot length (minutes)

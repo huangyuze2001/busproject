@@ -3,7 +3,7 @@
 Passenger waiting time and service reliability of an urban bus stop, analysed
 with **probabilistic model checking** in [PRISM](https://www.prismmodelchecker.org/),
 cross-validated with independent Python simulations, and extended to a corridor
-of stops, a real timetable, a runtime-verification monitor, and a digital-twin
+of stops, a published timetable, a schedule-replay monitor, and a digital-twin
 loop.
 
 MSc dissertation project. Models are written for PRISM 4.10.1; all Python
@@ -62,11 +62,11 @@ busproject/
 ├── fig3_timeout_vs_patience/
 ├── fig4_waiting_vs_frequency/
 ├── fig5_reliability_freq_x_capacity/
-├── real_data/                      # real-timetable case study, RV, digital twin
+├── real_data/                      # published-timetable case study, schedule replay, twin proof of concept
 │   ├── route77_data.py                shared real timetable  (SINGLE SOURCE OF TRUTH)
 │   ├── real_data_case.py              time-of-day reliability table
 │   ├── plot_real_data.py              time-of-day reliability figure
-│   ├── rv_monitor.py                  runtime-verification monitor + figure
+│   ├── rv_monitor.py                  schedule-replay monitor + figure
 │   ├── dt_loop.py                     digital-twin loop (synthetic + real modes)
 │   └── stop_model.py                  shared aggregate-CTMC solver  (SINGLE SOURCE OF TRUTH)
 ├── corridor_params.py              shared corridor params + PRISM reference  (SINGLE SOURCE OF TRUTH)
@@ -77,7 +77,11 @@ busproject/
 ├── plot_mdp_policies.py            Figure 5.6: MDP dispatch-policy comparison
 ├── scalability_growth.png
 ├── check_params_sync.py            asserts .sm constants == corridor_params.py (runs first)
-├── run_all.py                      one-command reproduction of all Python scripts
+├── experiments/                    supervisor-review validation/sensitivity scripts
+├── results/revision/               generated review-experiment CSVs and figures
+├── run_revision_experiments.py     one-command supervisor-review experiments
+├── run_all.py                      one-command reproduction of baseline Python scripts
+├── CHANGELOG_SUPERVISOR_REVIEW.md  summary of revision additions
 └── README.md
 ```
 
@@ -130,7 +134,7 @@ prints a PASS/FAIL summary. To run a single component instead:
 
 ```bash
 cd real_data && python dt_loop.py        # digital-twin loop (synthetic + real)
-cd real_data && python rv_monitor.py     # runtime-verification monitor
+cd real_data && python rv_monitor.py     # schedule-replay monitor
 python corridor_simulate.py              # corridor DES vs PRISM
 ```
 
@@ -153,16 +157,15 @@ PRISM results is therefore a strong cross-validation. It now imports parameters
 and PRISM reference values from `corridor_params.py` and **auto-checks** each
 property (gap + PASS/CHECK).
 
-**Real-data case study (`real_data/real_data_case.py`, `plot_real_data.py`).**
-Estimates a real, time-of-day-dependent bus rate from the route-77 timetable and
-feeds it into the single-stop model, producing a full-day reliability profile.
+**Timetable-calibrated case study (`real_data/real_data_case.py`, `plot_real_data.py`).**
+Estimates a time-of-day-dependent scheduled service rate from the published route-77 timetable.
+This is a schedule-driven proof of concept, not an analysis of realised vehicle trajectories.
 
-**Runtime-verification monitor (`real_data/rv_monitor.py`).** Replays one real
-day as an event stream, **re-estimates** the bus rate online after every arrival
-(MLE from recent inter-arrival gaps), and re-checks the SLA in real time, raising
-and clearing alerts as service degrades and recovers. This is the
-runtime-verification view (one real trajectory, checked as it unfolds), as
-opposed to PRISM's offline exhaustive checking.
+**Schedule-replay monitor (`real_data/rv_monitor.py`).** Replays scheduled departure
+events from one published timetable day. After each event it re-estimates the Poisson
+service-rate benchmark from the **four most recent scheduled headway gaps** and re-checks
+an illustrative bus-arrival threshold of 0.50. It does not monitor realised disruption,
+punctuality or live operational performance.
 
 **PRISM parameter-study replots (`plot_prism_studies.py`).** Re-renders the
 five PRISM Experiments figures (fig2–fig5 and the A0 sweep) from the exported
@@ -188,9 +191,9 @@ script's docstring.
   recommendation is **actuated in silico** and the loop closed: re-simulate
   under μ\*, re-estimate, re-verify (post-actuation reliability 0.970 vs the
   conservative pre-actuation prediction 0.950).
-- *Real* — ingests the route-77 timetable, estimates the real bus rate, verifies
-  the SLA, and searches for the frequency that would meet it. Estimates the bus
-  rate; demand (λ, θ) is assumed.
+- *Timetable* — ingests the published route-77 schedule, estimates a scheduled
+  service-rate parameter and computes a model-implied frequency threshold under
+  assumed passenger demand and patience. It is not an operational recommendation.
 
 ---
 
@@ -211,14 +214,14 @@ arrival and patience parameters remain assumed in the real-data components.
 
 | Result | Value |
 |---|---|
-| Single-stop reliability `P(served within 15)` | 0.749 (exact) vs 0.756 (sim), gap 0.008 |
+| Single-stop replication validation | 30-run DES mean 0.7452; matched CTMC mean 0.7447; paired gap 95% CI includes 0 |
 | Single-stop mean time-in-system | 6.23 min (exact) vs 6.13 min (sim) |
-| MDP dispatch (person-slots) | optimal 402.4 / baseline 446.0 / worst 1047.4 |
+| MDP dispatch baseline (dt=0.25) | optimal 100.57 / always-depart 111.46 / worst 261.83 person-min |
 | Corridor 2-stop | queue1 4.637, queue2 11.228, P(full2) 0.128 |
 | Corridor 3-stop | queue1 6.643, queue2 16.983, queue3 19.424, P(full3) 0.631 |
 | State-space growth | ≈ ×26–40 reachable states per added stop (×40.3 measured 2→3; structural ratio 21·(k+1)/k) |
-| Real route-77 daytime headway | ≈ 14 min (μ ≈ 0.069 /min) |
-| Real daytime `P(served within 15)` | 0.523 → twin recommends μ\* ≈ 0.640 /min (≈ 1.6 min headway) |
+| Published route-77 daytime headway | ≈ 14 min (μ ≈ 0.069 min⁻¹) |
+| Timetable-driven model threshold | schedule-derived operating point is below the illustrative model target; threshold is model-implied, not operational |
 | RV monitor (illustrative target 0.50) | in ALERT from monitoring start (02:17; needs 2 gaps to estimate), cleared 07:04, raised 20:43 |
 
 ---
@@ -235,11 +238,10 @@ arrival and patience parameters remain assumed in the real-data components.
 - The CTMC and MDP are **parallel models of the same system**, not layered.
 - Model-validation weight sits with the **synthetic** results (known ground
   truth); the real-data components demonstrate applicability, not validation.
-- **Scheduled vs Poisson headways**: all real-data reliability figures treat bus
-  arrivals as Poisson. A punctual scheduled service is near-deterministic, for
-  which `P(bus within T) = min(T/h, 1)` — the Poisson value is a conservative
-  lower bound (real, somewhat irregular service lies between the two). The
-  case-study table and figure now show **both** columns.
+- **Scheduled vs Poisson headways**: the timetable chapter reports two benchmark
+  interpretations: a Poisson-headway calculation and a perfectly punctual schedule
+  calculation `P(bus within T) = min(T/h, 1)`. They illustrate sensitivity to the
+  assumed headway distribution and are **not** claimed as universal probabilistic bounds.
 - **Waiting times use Little's law with reneging**: `W = L / (throughput +
   renege rate)`. Dividing by boarding throughput alone (an earlier version)
   overstates the wait — at night by ~3× (72 → 22.8 min).
@@ -251,7 +253,69 @@ arrival and patience parameters remain assumed in the real-data components.
   `P(served ≤ T) = μ/(μ+θ)·(1−e^{−(μ+θ)T})`), which the `fig2`–`fig4` PRISM
   results reproduce exactly — a free analytical sanity check.
 - **Simulation censoring**: passengers unresolved at the simulation horizon are
-  dropped; for the long horizons used the bias is negligible.
+  dropped. The supervisor-review validation therefore uses long horizons and
+  30 independent replications, with uncertainty reported explicitly.
 - All 3-stop reference values in `corridor_params.py`, including `P(full1)` and
   `P(full2)`, are **PRISM-verified** (4.10.1, 2026-07-01) and independently
   cross-checked by the DES.
+
+
+## Supervisor-review experiments
+
+The original model files and baseline scripts are preserved. Additional scripts in
+`experiments/` address the methodological and reproducibility points raised in the
+supervisor review without overwriting the original experiments.
+
+### 1. Repeated single-stop validation
+
+```bash
+python experiments/single_stop_replications.py
+```
+
+- 30 independent DES seeds (`0..29`)
+- 40,000 simulated minutes per replication
+- reports mean, standard deviation and 95% t confidence intervals
+- pairs each DES run with an exact tagged-CTMC calculation using that run's
+  arrival-seen queue-position distribution
+- outputs: `results/revision/single_stop_*.csv` and `.png`
+
+### 2. MDP discretisation sensitivity and policy regions
+
+```bash
+python experiments/mdp_dt_sensitivity.py
+```
+
+- fixed physical horizon: 20 min
+- slot lengths: `dt = 0.25, 0.125, 0.0625` min
+- records `P(N>=2)` for the Poisson passenger-arrival count per slot
+- compares optimal, always-depart and worst expected waiting
+- exports the baseline optimal hold/depart action map
+- outputs: `results/revision/mdp_*.csv` and `.png`
+
+At `dt=0.25`, `P(N>=2)` is about 0.090, so the baseline is explicitly treated as
+a coarse abstraction. The absolute rewards vary with `dt`, but the relative benefit
+of optimised holding over always-depart remains around 10--12% in the tested grid.
+
+### 3. Controlled corridor experiment
+
+```bash
+python experiments/corridor_controlled_experiment.py
+```
+
+The original coupled corridor is compared with an artificial uncoupled baseline.
+Both use the same one-bus cycle, demand, reneging, travel rate and platform bound;
+the control variant gives each downstream stop a fresh effective boarding capacity
+instead of residual seats. This isolates residual-seat depletion from cycle-length
+effects within the current abstraction. Three independent 50,000-min replications are used.
+
+### 4. Reproducibility settings
+
+Known from the archived project:
+
+- PRISM version: **4.10.1**
+- schedule-replay moving window: **4 scheduled headway gaps**
+- schedule-replay illustrative bus-arrival threshold: **0.50**
+- synthetic passenger-service demonstration threshold: **0.95**
+
+
+See `experiments/experiment_config.py` for the revision-experiment configuration.

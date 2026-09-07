@@ -7,22 +7,20 @@ Glasgow Airport, operator First Greater Glasgow) at "Partick Bus Station
 Source: bustimes.org (timetable data from the Traveline National Dataset,
 TNDS), retrieved 2026-06-23. Departure times manually verified.
 
-Purpose: estimate a REAL, time-of-day-dependent bus arrival rate mu_bus from
-the timetable and feed it into the single-stop CTMC, replacing the synthetic
-mu_bus used in Stages 1-2 -- implementing the supervisor's suggestion of a
-time-dependent rate fetched from a real timetable.
+Purpose: estimate a time-of-day-dependent bus arrival rate mu_bus from the
+published timetable and feed it into the single-stop CTMC, replacing the
+synthetic mu_bus used in the earlier synthetic experiments.
 
 Modelling notes:
   * A timetable gives the BUS service rate (mu_bus), not passenger demand, so
     lambda/theta/Cap/K remain assumed (as in Stage 1).
-  * POISSON vs SCHEDULED (#1): the CTMC treats bus arrivals as Poisson. A
-    punctual scheduled service is near-deterministic, for which
-    P(bus<=T) = min(T/h, 1); the table shows BOTH columns. Real service lies
-    between them (the Poisson value is the conservative lower bound).
-  * WAIT (#3, corrected): with reneging, Little's law uses the TOTAL exit
-    flow, so W = L / (throughput + renege_rate). Dividing by boarding
-    throughput alone (the previous version) overstates the wait, badly at
-    night where reneging dominates.
+  * POISSON vs SCHEDULED: the CTMC treats bus arrivals as Poisson. A punctual
+    scheduled service gives P(bus<=T) = min(T/h, 1); the table reports both
+    calculations as benchmark interpretations of the same mean headway. They
+    illustrate sensitivity to the assumed headway distribution and are not
+    treated as universal upper or lower bounds on realised service.
+  * WAIT: with reneging, Little's law uses the TOTAL exit flow, so
+    W = L / (throughput + renege_rate).
 """
 import numpy as np
 from route77_data import DEP, to_min
@@ -50,7 +48,7 @@ for name,lo,hi in bands:
     if sel.sum()==0: continue
     h=gaps[sel].mean(); mu=1/h; band_mu[name]=(h,mu)
     L,thr,ren=aggregate(LAM,mu,THETA,CAP,K)
-    W=L/(thr+ren) if (thr+ren)>0 else float('nan')     # Little, corrected (#3)
+    W=L/(thr+ren) if (thr+ren)>0 else float('nan')     # Little's law with all admitted exits
     p15  = p_bus_within_poisson(mu, T_SLA)
     p15d = p_bus_within_scheduled(h, T_SLA)
     print(f"{name:<18}{h:>7.1f}min{60/h:>9.3f}{mu:>9.4f}{p15:>13.2f}{p15d:>11.2f}{W:>11.1f}")
@@ -61,7 +59,7 @@ print(f"\nNight headway ~{night:.0f} min vs midday ~{midday:.0f} min: a {night/m
 print("difference in service rate, straight from the real timetable. Reliability")
 print("rises through the morning, peaks at midday, and falls again through the")
 print("evening into the sparse late-night service.")
-print("\nReading the two P15 columns: under a punctual schedule every daytime band")
-print("would be near-certain (h <= 15 min => P=1); the Poisson column is the")
-print("worst case for irregular arrivals. The gap between them IS the value of")
-print("punctuality -- see the scheduled-vs-Poisson limitations discussion.")
+print("\nThe Poisson and perfectly punctual calculations are two benchmark")
+print("interpretations of the same mean headway. They illustrate sensitivity")
+print("to the assumed headway distribution and are not treated as universal")
+print("upper or lower bounds on realised service.")

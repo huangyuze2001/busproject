@@ -7,8 +7,9 @@ correctly. Reports PASS/FAIL and timing per script, then prints a summary.
 
 PRISM model checking is performed separately in the PRISM GUI (open the .sm /
 .nm / .props files and Verify). This script reproduces the Python side:
-the cross-validation simulations, the real-timetable case study, the
-runtime-verification monitor, the digital-twin loop, and the figures.
+the validation and sensitivity experiments, the schedule-driven case study,
+the runtime-verification monitor, the digital-model loop, the corridor
+controlled experiment, and the figures.
 
 Usage:  python run_all.py
 Needs:  numpy, scipy, matplotlib  (plus the project's data/param modules).
@@ -22,16 +23,26 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # (folder relative to ROOT, script, one-line description). "." = project root.
 SCRIPTS = [
-    (".",         "check_params_sync.py", "Assert .sm constants match corridor_params.py"),
-    ("real_data", "dt_loop.py",           "Digital-twin loop: single-stop validation + synthetic & real twin"),
-    (".",         "corridor_simulate.py", "Corridor DES vs PRISM cross-validation (2- and 3-stop)"),
-    ("real_data", "real_data_case.py",    "Real timetable case study: time-of-day reliability table"),
-    ("real_data", "rv_monitor.py",        "Runtime-verification monitor (online re-estimation) + figure"),
-    ("real_data", "plot_real_data.py",    "Real-data reliability figure"),
-    (".",         "plot_corridor.py",     "Corridor results figure"),
-    (".",         "plot_scalability.py",  "Scalability growth figure"),
-    (".",         "plot_prism_studies.py","Replots of the five PRISM parameter studies (fig2-5, A0)"),
-    (".",         "plot_mdp_policies.py", "Figure 5.6: MDP dispatch-policy comparison"),
+    # Consistency check
+    (".",           "check_params_sync.py",                "Assert .sm constants match corridor_params.py"),
+
+    # Final validation / sensitivity experiments used in the dissertation
+    ("experiments", "single_stop_replications.py",          "30-replication DES + matched tagged-CTMC validation"),
+    ("experiments", "mdp_dt_sensitivity.py",                "MDP time-step sensitivity + optimal action regions"),
+    ("experiments", "corridor_controlled_experiment.py",     "Controlled coupled vs uncoupled three-stop corridor"),
+
+    # Main project analyses
+    ("real_data",   "dt_loop.py",                           "Synthetic estimate-verify-threshold-re-evaluate loop"),
+    (".",           "corridor_simulate.py",                 "Corridor DES vs PRISM cross-check (2- and 3-stop)"),
+    ("real_data",   "real_data_case.py",                    "Published-timetable case study: time-of-day benchmark table"),
+    ("real_data",   "rv_monitor.py",                        "Schedule-replay monitor + figure"),
+
+    # Figures
+    ("real_data",   "plot_real_data.py",                    "Published-timetable benchmark figure"),
+    (".",           "plot_corridor.py",                     "Corridor results figure"),
+    (".",           "plot_scalability.py",                  "Scalability growth figure"),
+    (".",           "plot_prism_studies.py",                "Replots of the five PRISM parameter studies (fig2-5, A0)"),
+    (".",           "plot_mdp_policies.py",                 "Figure 5.6: MDP dispatch-policy comparison"),
 ]
 
 

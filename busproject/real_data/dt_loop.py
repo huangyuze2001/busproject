@@ -2,24 +2,25 @@
 Digital-twin loop for the single-stop bus model.
 
 Runs the closed loop:  data -> parameter estimation -> CTMC verification
--> SLA decision (control search) -> [synthetic mode only] closed-loop
-re-validation: the recommendation is actuated on the simulated physical
-layer, the system re-observed, the model re-estimated and the SLA
-re-verified (a second full turn of the twin loop), in TWO modes:
+-> illustrative threshold check (control search) -> [synthetic mode only]
+closed-loop re-validation: the model-implied intervention is actuated on the
+simulated physical layer, the system re-observed, the model re-estimated and
+the selected property re-verified, in TWO modes:
 
-  * SYNTHETIC mode (unchanged): the physical layer is a discrete-event
+  * SYNTHETIC mode: the physical layer is a discrete-event
     simulation with KNOWN true parameters. Because the truth is known, this
-    mode doubles as MODEL VALIDATION -- the exact CTMC solve (mirroring PRISM
-    CSL) is cross-checked against the independent simulation (the 0.749 vs
-    0.756 agreement). The twin estimates lambda and theta; the bus rate mu_bus
-    is a control variable the twin sets.
+    mode also supports MODEL VALIDATION. The exact tagged-CTMC solve is
+    cross-checked against separate DES replications using matched
+    arrival-seen queue-position weighting; the replication
+    experiment is provided in experiments/single_stop_replications.py. The twin
+    estimates lambda and theta; the bus rate mu_bus is a control variable.
 
-  * REAL mode (new): the physical layer is the REAL route-77 timetable
-    (route77_data.py). Here the NEW estimated parameter is mu_bus, recovered
-    from the real headways; passenger demand (lambda, theta) is assumed, since
-    a timetable gives the bus service rate but not demand. The twin then
-    verifies the SLA at the real operating point and, if violated, searches
-    for the bus frequency that would restore it.
+  * TIMETABLE mode: the input is the PUBLISHED route-77 timetable
+    (route77_data.py). Here the estimated parameter is mu_bus, recovered
+    from scheduled headways; passenger demand (lambda, theta) is assumed, since
+    a timetable gives planned service but not realised demand or vehicle
+    trajectories. The model then evaluates the selected property and searches
+    for a model-implied frequency threshold under the stated assumptions.
 
 So the difference is symmetric: synthetic mode estimates (lambda, theta) with
 mu_bus told; real mode estimates mu_bus with (lambda, theta) assumed. Both run
@@ -39,11 +40,8 @@ try:
 except ImportError:
     dep_minutes = None   # real mode will report a clear message if data missing
 
-# NOTE (#7 reproducibility): each simulate() call creates its OWN seeded rng.
-# Previously a module-level rng was shared, so run_real()'s numbers depended on
-# run_synthetic() having consumed part of the stream first -- running real mode
-# alone gave different results. Now every mode is independently reproducible.
-
+# Each simulation call creates its own seeded random-number generator so that
+# each mode is reproducible when run independently.
 
 
 # 1. PHYSICAL LAYER : discrete-event simulation (the "ground truth")
@@ -108,7 +106,6 @@ def simulate(lam, mu_bus, theta, C, horizon=20000.0, seed=7):
     return done
 
 
-
 # 2. CTMC SOLVER : mirrors bus_stop_tagged.sm  (the "model" the twin verifies)
 
 # State space:  waiting states a = 0..M  (tag=0, `a` people ahead of tagged pax)
@@ -159,10 +156,9 @@ def expected_resolution_time(Q, a0, M):
 def reliability_for_arrival(mu_bus, theta, C, M, T, ahead_dist):
     """Weight per-a results by the distribution of #ahead seen at arrival (PASTA).
 
-    PERFORMANCE (#11): Q depends only on (mu_bus, theta, C), not on the start
-    state a, so the transient solution expm(Q*T) and the absorption-time solve
-    are computed ONCE and then read off row-by-row -- previously they were
-    recomputed for every a in ahead_dist (~30x redundant work per mu)."""
+    Q depends only on (mu_bus, theta, C), not on the start state a, so the
+    transient solution expm(Q*T) and the absorption-time solve are computed
+    once and then read off row-by-row."""
     Q, SERVED, RENEGED = build_tagged_Q(mu_bus, theta, C, M)
     PT = expm(Q * T)                                   # one matrix exponential
     QT = Q[:M + 1, :M + 1]
@@ -174,7 +170,6 @@ def reliability_for_arrival(mu_bus, theta, C, M, T, ahead_dist):
         p_served += w * PT[a, SERVED]
         e_wait   += w * x[a]
     return p_served, e_wait
-
 
 
 # 3. ESTIMATOR : MLE of parameters from an observed event log
@@ -212,14 +207,13 @@ def estimate_mu_from_timetable(lo_h, hi_h):
     return 1.0 / headway, headway
 
 
-
 # 4a. SYNTHETIC RUN: validation + one digital-twin turn with a control search
 
 def run_synthetic():
     # ---- TRUE physical parameters (unknown to the twin) ----
     TRUE = dict(lam=2.0, mu_bus=0.22, theta=0.03, C=10)   # headway ~ 4.5 min
     T   = 15.0      # service deadline (minutes)
-    SLA = 0.95      # target: P(served within T) >= SLA
+    SLA = 0.95      # illustrative threshold: P(served within T) >= SLA
     M   = 80        # truncation of #ahead in the CTMC
 
     print("#" * 64)
@@ -263,7 +257,7 @@ def run_synthetic():
           f"({'PASS' if err < 0.03 else 'CHECK'})")
 
     print("\n" + "=" * 64)
-    print("STEP 4 - DECISION (search headway to meet the SLA)")
+    print("STEP 4 - DECISION (search model-implied frequency threshold)")
     print("=" * 64)
     rec_mu, rec_p = _twin_decision(
         theta_hat, TRUE["C"], M, T, SLA, ahead_dist, mu_now, p_served_T,
@@ -271,16 +265,16 @@ def run_synthetic():
         title="Digital-twin control search: reliability vs bus frequency")
 
     # ---- STEP 5: close the loop (in silico) --------------------------------
-    # The recommendation is ACTUATED on the (simulated) physical layer, the
+    # The model-implied intervention is applied to the simulated physical layer, the
     # system is observed under the new operating point, the model is
-    # RE-ESTIMATED from the new log, and the SLA is RE-VERIFIED. This is a
+    # parameters are re-estimated from the new log, and the selected property is re-verified. This is a
     # second full turn of the twin loop: act -> observe -> estimate -> verify.
     # Only possible in MODE A, where the physical layer is a simulation we can
     # actuate; the real twin remains one-directional (see MODE B).
     print("\n" + "=" * 64)
     print("STEP 5 - CLOSED-LOOP RE-VALIDATION (actuate in silico -> re-verify)")
     print("=" * 64)
-    print(f"actuating recommendation: mu_bus {mu_now:g} -> {rec_mu:.3f} /min "
+    print(f"applying model-implied intervention: mu_bus {mu_now:g} -> {rec_mu:.3f} /min "
           f"(headway {1/rec_mu:.2f} min)")
     done2 = simulate(TRUE["lam"], rec_mu, TRUE["theta"], TRUE["C"],
                      horizon=40000.0, seed=23)
@@ -298,7 +292,7 @@ def run_synthetic():
     print(f"re-verified (CTMC)        : P=? [F<={T:g} served] = {p2:.3f}")
     print(f"--> model-vs-physical gap at the NEW operating point = {gap2:.3f}  "
           f"({'PASS' if gap2 < 0.03 else 'CHECK'})")
-    print(f"--> SLA after actuation   : {emp2:.3f} vs {SLA}  "
+    print(f"--> threshold after actuation: {emp2:.3f} vs {SLA}  "
           f"({'MET' if emp2 >= SLA else 'NOT MET'})")
     print("note: STEP 4's prediction used the PRE-actuation ahead-distribution")
     print("(queues under the old, slower service), so it is CONSERVATIVE; the")
@@ -333,12 +327,12 @@ def run_real(window=(7, 19)):
     print("(ASSUMPTION: bus arrivals treated as POISSON with this rate. A punctual")
     print(" SCHEDULED service is near-deterministic, for which P(bus within T) =")
     print(f" min(T/h,1) = {min(15/headway,1):.3f} here -- the Poisson figure below is a")
-    print(" conservative lower bound. See the scheduled-vs-Poisson limitations note.)")
+    print(" Poisson benchmark. See the scheduled-vs-punctual benchmark note.)")
 
     print("\n" + "=" * 64)
     print("STEP 2 - CONSISTENCY CHECK (assumed demand + real mu_bus)")
     print("=" * 64)
-    # NOTE (#6): this step is DELIBERATELY circular -- lambda and theta are
+    # This step intentionally reuses the synthetic estimates -- lambda and theta are
     # assumed, fed into a simulation, and re-estimated from it. It carries NO
     # independent information about the real system; it only checks that the
     # estimator + verifier machinery is self-consistent at the real operating
@@ -362,27 +356,27 @@ def run_real(window=(7, 19)):
     print(" weight sits with MODE A. Here the cross-check only confirms consistency.)")
 
     print("\n" + "=" * 64)
-    print("STEP 4 - DECISION (does the REAL service meet the SLA?)")
+    print("STEP 4 - DECISION (timetable input vs illustrative threshold)")
     print("=" * 64)
     _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_real, p_served_T,
                    fname="dt_reliability_curve_real.png",
                    title="Digital-twin on real data: reliability vs bus frequency")
     print("\n(one-directional twin: there is NO actuation path back to the real")
-    print(" service, so the loop cannot be closed here -- the recommendation is")
+    print(" service, so the loop cannot be closed here -- the model-implied threshold is")
     print(" advisory. Closed-loop re-validation is demonstrated in MODE A, where")
     print(" the physical layer is a simulation the twin can actuate.)")
 
 
-# shared STEP-4 logic (SLA check + control search + figure)
+# shared STEP-4 logic (illustrative threshold check + frequency search + figure)
 
 def _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_now, p_served_T,
                    fname, title):
-    print(f"SLA: P(served within {T:g} min) >= {SLA}")
+    print(f"Illustrative threshold: P(served within {T:g} min) >= {SLA}")
     if p_served_T >= SLA:
-        print(f"Current operating point already meets SLA "
+        print(f"Current operating point already meets the illustrative threshold "
               f"({p_served_T:.3f} >= {SLA}).")
     else:
-        print(f"Current point VIOLATES SLA ({p_served_T:.3f} < {SLA}). Searching...")
+        print(f"Current point is below the illustrative threshold ({p_served_T:.3f} < {SLA}). Searching...")
 
     mus = np.linspace(0.10, 1.00, 31)          # headway 10 min .. 1 min
     curve = np.array([reliability_for_arrival(mu, theta_hat, C, M, T, ahead_dist)[0]
@@ -390,17 +384,17 @@ def _twin_decision(theta_hat, C, M, T, SLA, ahead_dist, mu_now, p_served_T,
     feasible = mus[curve >= SLA]
     rec_mu = feasible.min() if feasible.size else mus[-1]
     rec_p = reliability_for_arrival(rec_mu, theta_hat, C, M, T, ahead_dist)[0]
-    note = "" if feasible.size else "  (SLA not reachable within search range)"
-    print(f"recommended bus rate mu* = {rec_mu:.3f} /min "
+    note = "" if feasible.size else "  (threshold not reachable within search range)"
+    print(f"model-implied bus rate mu* = {rec_mu:.3f} /min "
           f"(headway {1/rec_mu:.2f} min)  -> P(served<= {T:g}) = {rec_p:.3f}{note}")
 
     fig, ax = plt.subplots(figsize=(7.2, 4.4))
     ax.plot(mus, curve, "-o", ms=4, color="#2b6cb0", label="CTMC: P(served within 15 min)")
-    ax.axhline(SLA, ls="--", color="#c0392b", label=f"SLA = {SLA}")
+    ax.axhline(SLA, ls="--", color="#c0392b", label=f"illustrative threshold = {SLA}")
     ax.axvline(mu_now, ls=":", color="#7f8c8d")
     ax.scatter([mu_now], [p_served_T], color="#7f8c8d", zorder=5, label="current op. point")
     ax.scatter([rec_mu], [rec_p], color="#27ae60", zorder=5, s=70, marker="*",
-               label="recommended")
+               label="model-implied threshold")
     ax.set_xlabel("bus arrival rate  $\\mu_{bus}$  (per minute)")
     ax.set_ylabel("P(served within 15 min)")
     ax.set_title(title)

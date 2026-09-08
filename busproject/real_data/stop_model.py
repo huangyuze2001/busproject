@@ -1,10 +1,6 @@
 """
 Shared aggregate single-stop CTMC solver (single source of truth).
 
-Previously this solver was duplicated verbatim in real_data_case.py and
-plot_real_data.py; both now import it from here so the model is edited in
-exactly one place (same principle as route77_data.py / corridor_params.py).
-
 LITTLE'S LAW WITH RENEGING (the #3 correction):
   With abandonment, the flow term in Little's law L = lambda_eff * W is the
   rate at which passengers LEAVE the waiting system by ANY route -- boarded

@@ -1,11 +1,3 @@
-"""Shared configuration for supervisor-review experiments.
-
-These settings reproduce the additional validation/sensitivity experiments added
-in response to the dissertation review. The original model files and baseline
-scripts are intentionally left unchanged; revision experiments write only to
-results/revision/.
-"""
-
 # Single-stop validation
 N_REPLICATIONS = 30
 SIM_HORIZON_MIN = 40_000.0

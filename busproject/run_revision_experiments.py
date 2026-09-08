@@ -1,4 +1,3 @@
-"""Run all experiments added in response to the supervisor review."""
 from pathlib import Path
 import subprocess
 import sys

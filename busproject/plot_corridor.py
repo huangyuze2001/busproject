@@ -3,8 +3,6 @@ Stage-2 corridor: mean queue and P(full) growing downstream.
 Data: PRISM steady-state results for corridor_2stop.sm / corridor_3stop.sm,
 imported from corridor_params.PRISM_REF (single source of truth, #12) --
 identical demand at every stop.
-
-ATTRIBUTION NOTE (#4): the two mechanisms in this figure are different.
   * DOWNSTREAM worsening (stop1 -> stop2 -> stop3 within one corridor) is the
     SEAT COUPLING: the shared bus arrives partially full.
   * The UPSTREAM stop also worsens when a stop is ADDED (2-stop 4.6 -> 3-stop

@@ -1,6 +1,6 @@
 """Controlled three-stop corridor experiment.
 
-Compares the original residual-seat-coupled corridor with an artificial
+Compares the residual-seat-coupled corridor with an artificial
 uncoupled full-capacity baseline. Both variants keep the same one-bus cycle,
 arrival process, reneging process, travel process and platform bound. The only
 change is whether downstream stops inherit residual capacity or receive a fresh
@@ -17,7 +17,7 @@ from scipy.stats import t as student_t
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-OUT = ROOT / "results" / "revision"
+OUT = ROOT / "results" / "validation"
 OUT.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(ROOT))
 

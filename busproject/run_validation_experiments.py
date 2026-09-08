@@ -13,7 +13,7 @@ SCRIPTS = [
 
 def main():
     print("=" * 76)
-    print("SUPERVISOR-REVIEW EXPERIMENTS")
+    print("VALIDATION AND SENSITIVITY EXPERIMENTS")
     print("=" * 76)
     failed = []
     for script, description in SCRIPTS:
@@ -27,8 +27,8 @@ def main():
     if failed:
         print("\nFAILED:", ", ".join(failed))
         raise SystemExit(1)
-    print("\nAll supervisor-review experiments completed successfully.")
-    print("Outputs: results/revision/")
+    print("\nAll validation and sensitivity experiments completed successfully.")
+    print("Outputs: results/validation/")
 
 
 if __name__ == "__main__":

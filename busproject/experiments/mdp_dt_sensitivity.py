@@ -16,7 +16,7 @@ from experiment_config import (LAMBDA, MU_BUS, THETA, EFFECTIVE_CAPACITY,
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-OUT = ROOT / "results" / "revision"
+OUT = ROOT / "results" / "validation"
 OUT.mkdir(parents=True, exist_ok=True)
 
 

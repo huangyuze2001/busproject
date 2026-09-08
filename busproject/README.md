@@ -78,8 +78,8 @@ busproject/
 ├── scalability_growth.png
 ├── check_params_sync.py            asserts .sm constants == corridor_params.py (runs first)
 ├── experiments/                    validation/sensitivity scripts
-├── results/revision/               generated review-experiment CSVs and figures
-├── run_revision_experiments.py     one-command experiments
+├── results/validation/             generated validation and sensitivity outputs
+├── run_validation_experiments.py   one-command validation and sensitivity experiments
 ├── run_all.py                      one-command reproduction of baseline Python scripts
 └── README.md
 ```
@@ -92,7 +92,7 @@ parameters are edited in exactly one place:
 - `corridor_params.py` — the corridor model parameters **and** the PRISM-verified
   reference values, imported by `corridor_simulate.py`. The parameter values here
   must match the constants in `2stop/` and `3stop/` `.sm` files — a requirement
-  that is now enforced automatically: `check_params_sync.py` parses the `.sm`
+  that is enforced automatically: `check_params_sync.py` parses the `.sm`
   declarations and fails loudly on any mismatch (it runs first in `run_all.py`).
 - `real_data/stop_model.py` — the aggregate single-stop CTMC solver (with the
   reneging-aware Little's-law components) **and** the shared six-band day
@@ -152,7 +152,7 @@ sweep frequency, patience, and capacity.
 **Corridor (`2stop/`, `3stop/`, `corridor_simulate.py`).** A shared bus serves
 stops in sequence. `corridor_simulate.py` is an **independent** discrete-event
 (Monte-Carlo) simulation that builds no matrix; agreement with the exact
-PRISM results is therefore a strong cross-validation. It now imports parameters
+PRISM results is therefore a strong cross-validation. It imports parameters
 and PRISM reference values from `corridor_params.py` and **auto-checks** each
 property (gap + PASS/CHECK).
 
@@ -242,8 +242,8 @@ arrival and patience parameters remain assumed in the real-data components.
   calculation `P(bus within T) = min(T/h, 1)`. They illustrate sensitivity to the
   assumed headway distribution and are **not** claimed as universal probabilistic bounds.
 - **Waiting times use Little's law with reneging**: `W = L / (throughput +
-  renege rate)`. Dividing by boarding throughput alone (an earlier version)
-  overstates the wait — at night by ~3× (72 → 22.8 min).
+  renege rate)`. Dividing by boarding throughput alone
+  would overstate the wait — at night by ~3× (72 → 22.8 min).
 - **`fig5` capacity curves coincide for Cap ≥ 10 by construction**: in the
   tagged model `ahead` never increases, so with `A0 = 8` any capacity above
   `A0+1` is never binding — the four curves are identical, not a plotting bug.
@@ -252,18 +252,18 @@ arrival and patience parameters remain assumed in the real-data components.
   `P(served ≤ T) = μ/(μ+θ)·(1−e^{−(μ+θ)T})`), which the `fig2`–`fig4` PRISM
   results reproduce exactly — a free analytical sanity check.
 - **Simulation censoring**: passengers unresolved at the simulation horizon are
-  dropped. The supervisor-review validation therefore uses long horizons and
+  dropped. The validation therefore uses long horizons and
   30 independent replications, with uncertainty reported explicitly.
 - All 3-stop reference values in `corridor_params.py`, including `P(full1)` and
   `P(full2)`, are **PRISM-verified** (4.10.1, 2026-07-01) and independently
   cross-checked by the DES.
 
 
-## Supervisor-review experiments
+## Validation and sensitivity experiments
 
-The original model files and baseline scripts are preserved. Additional scripts in
-`experiments/` address the methodological and reproducibility points raised in the
-supervisor review without overwriting the original experiments.
+Additional scripts in `experiments/` provide repeated validation, discretisation
+sensitivity analysis, and a controlled corridor comparison supporting the methodological
+and reproducibility analysis reported in the dissertation.
 
 ### 1. Repeated single-stop validation
 
@@ -276,7 +276,7 @@ python experiments/single_stop_replications.py
 - reports mean, standard deviation and 95% t confidence intervals
 - pairs each DES run with an exact tagged-CTMC calculation using that run's
   arrival-seen queue-position distribution
-- outputs: `results/revision/single_stop_*.csv` and `.png`
+- outputs: `results/validation/single_stop_*.csv` and `.png`
 
 ### 2. MDP discretisation sensitivity and policy regions
 
@@ -289,7 +289,7 @@ python experiments/mdp_dt_sensitivity.py
 - records `P(N>=2)` for the Poisson passenger-arrival count per slot
 - compares optimal, always-depart and worst expected waiting
 - exports the baseline optimal hold/depart action map
-- outputs: `results/revision/mdp_*.csv` and `.png`
+- outputs: `results/validation/mdp_*.csv` and `.png`
 
 At `dt=0.25`, `P(N>=2)` is about 0.090, so the baseline is explicitly treated as
 a coarse abstraction. The absolute rewards vary with `dt`, but the relative benefit
@@ -317,4 +317,4 @@ Known from the archived project:
 - synthetic passenger-service demonstration threshold: **0.95**
 
 
-See `experiments/experiment_config.py` for the revision-experiment configuration.
+See `experiments/experiment_config.py` for the validation and sensitivity configuration.

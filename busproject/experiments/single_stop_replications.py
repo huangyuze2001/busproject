@@ -16,7 +16,7 @@ from scipy.stats import t as student_t
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-OUT = ROOT / "results" / "revision"
+OUT = ROOT / "results" / "validation"
 OUT.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(ROOT / "real_data"))
 
